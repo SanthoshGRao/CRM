@@ -1,0 +1,26 @@
+{
+  "name": "crm-platform",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3",
+    "lucide-react": "^0.514.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "prisma": "6.19.3",
+    "typescript": "^5.8.3",
+    "vite": "^6.2.0"
+  }
+}

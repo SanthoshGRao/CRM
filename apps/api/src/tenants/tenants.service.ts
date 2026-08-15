@@ -1,0 +1,2 @@
+import { Injectable } from '@nestjs/common'; import { PrismaService } from '../common/prisma/prisma.service';
+@Injectable() export class TenantsService { constructor(private readonly prisma: PrismaService) {} async findOne(id: string) { return this.prisma.tenant.findUnique({ where: { id }, include: { settings: true, features: true } }); } async updateSettings(id: string, data: any) { return this.prisma.tenantSettings.update({ where: { tenantId: id }, data }); } }
