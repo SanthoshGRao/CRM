@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Zap, Trash2, Loader2, Pencil, Play, History, CheckCircle2,
-  XCircle, MinusCircle, ChevronDown, ChevronRight, Filter, ListChecks,
+  XCircle, MinusCircle, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { workflowsApi } from '@/lib/api/services';
@@ -73,8 +73,6 @@ export default function AutomationClient() {
 
       <ErrorBanner message={error} />
 
-      <HowItWorks />
-
       {editing.mode !== 'closed' && (
         <WorkflowBuilder
           initial={editing.mode === 'edit' ? editing.workflow : undefined}
@@ -124,32 +122,6 @@ export default function AutomationClient() {
 }
 
 // ─── Guidance ────────────────────────────────────────────────────────────────
-
-function HowItWorks() {
-  const steps = [
-    { icon: Zap, title: 'A trigger fires', body: 'Someone creates a lead, moves a deal, changes a field.' },
-    { icon: Filter, title: 'Conditions are checked', body: 'All of them must hold, otherwise the run is skipped.' },
-    { icon: ListChecks, title: 'Actions run', body: 'Tasks, assignments, notifications — each one logged.' },
-  ];
-
-  return (
-    <div className="grid gap-3 sm:grid-cols-3">
-      {steps.map(({ icon: Icon, title, body }, i) => (
-        <div key={title} className="card flex items-start gap-3 p-4">
-          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
-            <Icon className="h-4 w-4" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-800">
-              <span className="text-slate-400">{i + 1}.</span> {title}
-            </p>
-            <p className="mt-0.5 text-xs text-slate-500">{body}</p>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function Templates({ onPick }: { onPick: (t: WorkflowTemplate) => void }) {
   return (
