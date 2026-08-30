@@ -21,6 +21,12 @@ The only native surface is the app icon, splash screen, status bar color, and
 - The full push pipeline — token registration, storage, task-assignment
   alerts, and the daily due/digest job — is built end to end. It just needs
   a Firebase project's credentials on both sides to actually send anything.
+- `MainActivity.java` flushes Android's WebView `CookieManager` on
+  pause/stop. Without this, the API's HttpOnly refresh-token cookie only
+  lives in memory and Android backgrounding the app (which it does
+  aggressively) silently drops it — the app then looks logged in all
+  session but asks for a fresh login every time it's reopened. Known
+  Capacitor gap: https://github.com/ionic-team/capacitor/issues/3012
 
 ## Push notifications — code is done, needs your Firebase project
 
