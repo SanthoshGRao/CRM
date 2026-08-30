@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ConflictException, BadRequestException }
 import * as argon2 from 'argon2';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { DEFAULT_ROLE_NAME, sortRolesByRank } from '../common/rbac/role-definitions';
+import { getMaxUsers } from '../common/billing/plan-limits.util';
 import { CreateUserDto } from './dto/create-user.dto';
 
 const USER_SELECT = {
@@ -9,6 +10,17 @@ const USER_SELECT = {
   avatarUrl: true, phone: true, status: true, isEmailVerified: true,
   lastLoginAt: true, createdAt: true,
   userRoles: { include: { role: { select: { id: true, name: true } } } },
+} as const;
+
+/**
+ * Fields exposed to API-key callers (the data API's `read:users` scope).
+ * Deliberately excludes passwordHash, tokens, and timing/verification fields
+ * like lastLoginAt/isEmailVerified that a customer integration has no need for.
+ */
+const API_KEY_USER_SELECT = {
+  id: true, email: true, firstName: true, lastName: true,
+  avatarUrl: true, status: true,
+  userRoles: { select: { role: { select: { name: true } } } },
 } as const;
 
 @Injectable()
@@ -46,6 +58,53 @@ export class UsersService {
   }
 
   /**
+   * Read-only listing for API-key callers (data API `read:users` scope).
+   * Never returns password hashes, tokens, or login/verification timestamps.
+   */
+  async listForApiKey(tenantId: string, query: { page?: any; limit?: any }) {
+    const page = Number(query.page) || 1;
+
+    let limit = 50;
+    if (query.limit !== undefined && query.limit !== '') {
+      limit = Number(query.limit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+        throw new BadRequestException('limit must be an integer between 1 and 200.');
+      }
+    }
+
+    const where = { tenantId };
+    const [data, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        select: API_KEY_USER_SELECT as any,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return {
+      data: data.map(this.shapeApiKeyUser),
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  async findOneForApiKey(id: string, tenantId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id, tenantId },
+      select: API_KEY_USER_SELECT as any,
+    });
+    if (!user) throw new NotFoundException(`No user with id ${id}.`);
+    return this.shapeApiKeyUser(user);
+  }
+
+  private shapeApiKeyUser(user: any) {
+    const { userRoles, ...rest } = user;
+    return { ...rest, roles: (userRoles ?? []).map((ur: any) => ({ name: ur.role.name })) };
+  }
+
+  /**
    * Roles available in this workspace, for the "add member" form. Ordered
    * Owner → Viewer and flagged with the one used when no role is chosen, so the
    * form never has to hardcode role names.
@@ -67,6 +126,24 @@ export class UsersService {
 
     const existing = await this.prisma.user.findFirst({ where: { tenantId, email } });
     if (existing) throw new ConflictException('Someone with that email is already in this workspace.');
+
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { tenantId },
+      include: { plan: { select: { features: true } } },
+    });
+    // maxUsers is the plan tier's ceiling; seats is how many of that ceiling
+    // the tenant has actually paid for. A plan with no ceiling (e.g. Free)
+    // skips the check entirely — there's nothing to buy more of.
+    const maxUsers = getMaxUsers(subscription?.plan.features);
+    if (maxUsers !== null) {
+      const seatLimit = Math.min(subscription?.seats ?? 1, maxUsers);
+      const seatsUsed = await this.prisma.user.count({ where: { tenantId } });
+      if (seatsUsed >= seatLimit) {
+        throw new BadRequestException(
+          `This workspace has ${seatLimit} seat${seatLimit === 1 ? '' : 's'} paid for. Buy more seats in Settings → Billing to add another member.`,
+        );
+      }
+    }
 
     let roleId = dto.roleId;
     if (roleId) {

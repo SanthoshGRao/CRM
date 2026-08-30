@@ -153,7 +153,7 @@ async function main() {
     }
 
     const adminRole = await prisma.role.findFirst({
-      where: { tenantId: tenant.id, name: 'Admin' },
+      where: { tenantId: tenant.id, name: 'Developer' },
     });
 
     if (adminRole) {
@@ -163,14 +163,14 @@ async function main() {
       });
     }
 
-    // 7. Create User with role = Admin
+    // 7. Create User with role = Developer
     const user = await prisma.user.create({
       data: {
         tenantId: tenant.id,
         email: targetEmail.toLowerCase(),
         passwordHash,
         firstName: 'Santhosh',
-        lastName: 'Admin',
+        lastName: 'Developer',
         status: 'active',
         isEmailVerified: true,
         userRoles: adminRole
@@ -180,7 +180,7 @@ async function main() {
           : undefined,
       },
     });
-    console.log(`Created Tenant User with Role 'Admin': ${user.email} (${user.id})`);
+    console.log(`Created Tenant User with Role 'Developer': ${user.email} (${user.id})`);
 
     // 8. Create Default Pipeline
     await prisma.pipeline.create({

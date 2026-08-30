@@ -140,9 +140,23 @@ export class LeadsService {
   }
 
   async create(dto: CreateLeadDto, tenantId: string, userId: string) {
+    let pipelineId = dto.pipelineId;
+    let stageId = dto.stageId;
+
+    if (!pipelineId || !stageId) {
+      const defaultPipeline = await this.pipelines.findDefault(tenantId, 'lead');
+      if (!defaultPipeline || !defaultPipeline.stages || defaultPipeline.stages.length === 0) {
+        throw new BadRequestException('No pipeline or stages configured for leads.');
+      }
+      pipelineId = pipelineId ?? defaultPipeline.id;
+      stageId = stageId ?? defaultPipeline.stages[0].id;
+    }
+
     const leadData: any = {
       ...dto,
       tenantId,
+      pipelineId,
+      stageId,
       status: 'new',
       value: dto.value ? dto.value : undefined,
       expectedCloseDate: dto.expectedCloseDate ? new Date(dto.expectedCloseDate) : undefined,

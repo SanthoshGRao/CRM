@@ -27,13 +27,15 @@ export class CreateDealDto {
   @IsUUID()
   companyId?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsUUID()
-  pipelineId: string;
+  pipelineId?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsUUID()
-  stageId: string;
+  stageId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

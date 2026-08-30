@@ -12,6 +12,7 @@ import { formatDate, getInitials } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Can } from '@/components/ui/Can';
 import { DetailRow, ErrorBanner } from '@/components/ui/Field';
+import { CustomFieldSummary } from '@/components/ui/CustomFieldInputs';
 import { TaskForm, toTaskFormValues } from '../TaskForm';
 
 const PRIORITY_CLASSES: Record<string, string> = {
@@ -80,6 +81,7 @@ export default function TaskDetailClient({ taskId }: { taskId: string }) {
           <TaskForm
             taskId={taskId}
             initialValues={toTaskFormValues(t)}
+            initialCustomValues={t.customFieldValues ?? []}
             onCancel={() => setIsEditing(false)}
             onSaved={() => setIsEditing(false)}
           />
@@ -173,6 +175,8 @@ export default function TaskDetailClient({ taskId }: { taskId: string }) {
             )}
           </div>
         </div>
+
+        <CustomFieldSummary values={t.customFieldValues} />
       </div>
     </div>
   );

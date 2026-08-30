@@ -8,7 +8,7 @@ import { Field } from '@/components/ui/Field';
 export type CustomFieldValues = Record<string, string>;
 
 interface CustomFieldInputsProps {
-  entityType: 'contact' | 'company' | 'lead' | 'deal';
+  entityType: 'contact' | 'company' | 'lead' | 'deal' | 'task';
   values: CustomFieldValues;
   onChange: (values: CustomFieldValues) => void;
   /** Existing values from a record's `customFieldValues` relation. */

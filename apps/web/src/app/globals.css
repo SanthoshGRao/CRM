@@ -49,6 +49,12 @@
 
   .sidebar-nav {
     @apply flex flex-1 flex-col gap-0.5 overflow-y-auto p-3;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+  }
+
+  .sidebar-nav::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
   }
 
   .nav-item {
@@ -144,7 +150,12 @@
   }
 
   .btn-primary {
-    @apply btn bg-brand-600 text-white hover:bg-brand-700;
+    @apply btn text-white transition-[filter];
+    background-color: var(--brand-accent, #4f46e5);
+  }
+
+  .btn-primary:hover {
+    filter: brightness(0.9);
   }
 
   .btn-secondary {
@@ -184,6 +195,12 @@
 
   .form-error {
     @apply text-xs text-red-500 mt-1;
+  }
+
+  /* Hides the native picker glyph so a custom leading icon can stand in for it,
+     while keeping the browser's date picker clickable in the same spot. */
+  .date-input-clean::-webkit-calendar-picker-indicator {
+    opacity: 0;
   }
 
   /* ── Badges ───────────────────────────────────────────────── */

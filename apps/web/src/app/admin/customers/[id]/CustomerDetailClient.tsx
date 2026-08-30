@@ -13,6 +13,7 @@ import { formatDate, getInitials } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth.store';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Field, DetailRow, ErrorBanner } from '@/components/ui/Field';
+import { SubscriptionCard, FeatureFlagsCard, DomainsCard } from './TenantExtras';
 
 export default function CustomerDetailClient({ tenantId }: { tenantId: string }) {
   const router = useRouter();
@@ -222,6 +223,12 @@ export default function CustomerDetailClient({ tenantId }: { tenantId: string })
             </table>
           </div>
         </div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <SubscriptionCard tenantId={tenantId} subscription={tenant.subscription} />
+        <FeatureFlagsCard tenantId={tenantId} features={tenant.features ?? []} />
+        <DomainsCard tenantId={tenantId} domains={tenant.domains ?? []} />
       </div>
 
       <div className="card">

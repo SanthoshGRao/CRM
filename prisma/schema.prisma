@@ -171,6 +171,14 @@ enum SubscriptionStatus {
   trialing
 }
 
+enum PaymentStatus {
+  created
+  authorized
+  captured
+  failed
+  refunded
+}
+
 enum NotificationChannel {
   in_app
   email
@@ -212,6 +220,8 @@ model Tenant {
   auditLogs       AuditLog[]
   notifications   Notification[]
   subscription    Subscription?
+  payments        Payment[]
+  workflowRoleCursors WorkflowRoleCursor[]
 
   @@map("tenants")
 }
@@ -673,6 +683,8 @@ model Task {
   lead       Lead?   @relation("LeadTasks", fields: [relatedLeadId], references: [id])
   deal       Deal?   @relation("DealTasks", fields: [relatedDealId], references: [id])
 
+  customFieldValues CustomFieldValue[]
+
   @@index([tenantId])
   @@index([tenantId, assignedToId])
   @@index([tenantId, status])
@@ -762,6 +774,7 @@ model CustomFieldValue {
   companyId   String?           @map("company_id")
   leadId      String?           @map("lead_id")
   dealId      String?           @map("deal_id")
+  taskId      String?           @map("task_id")
   value       String?
   createdAt   DateTime          @default(now()) @map("created_at")
   updatedAt   DateTime          @updatedAt @map("updated_at")
@@ -771,11 +784,13 @@ model CustomFieldValue {
   company Company?    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   lead    Lead?       @relation(fields: [leadId], references: [id], onDelete: Cascade)
   deal    Deal?       @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  task    Task?       @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@unique([fieldId, contactId])
   @@unique([fieldId, companyId])
   @@unique([fieldId, leadId])
   @@unique([fieldId, dealId])
+  @@unique([fieldId, taskId])
   @@map("custom_field_values")
 }
 
@@ -848,6 +863,20 @@ model WorkflowExecution {
   @@map("workflow_executions")
 }
 
+/** Remembers which role member was assigned last, so "Sales representatives" etc. round-robin fairly. */
+model WorkflowRoleCursor {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  target    String
+  cursor    Int      @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, target])
+  @@map("workflow_role_cursors")
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // NOTIFICATIONS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -891,6 +920,7 @@ model Plan {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   subscriptions Subscription[]
+  payments      Payment[]
 
   @@map("plans")
 }
@@ -900,6 +930,8 @@ model Subscription {
   tenantId           String             @unique @map("tenant_id")
   planId             String             @map("plan_id")
   status             SubscriptionStatus @default(trialing)
+  /** Seats paid for at plan.price each — bounds how many users the tenant can add. */
+  seats              Int                @default(1)
   currentPeriodStart DateTime           @map("current_period_start")
   currentPeriodEnd   DateTime           @map("current_period_end")
   cancelledAt        DateTime?          @map("cancelled_at")
@@ -908,8 +940,33 @@ model Subscription {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   plan   Plan   @relation(fields: [planId], references: [id])
+  payments Payment[]
 
   @@map("subscriptions")
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  tenantId          String        @map("tenant_id")
+  subscriptionId    String?       @map("subscription_id")
+  planId            String        @map("plan_id")
+  razorpayOrderId   String        @unique @map("razorpay_order_id")
+  razorpayPaymentId String?       @unique @map("razorpay_payment_id")
+  razorpaySignature String?       @map("razorpay_signature")
+  amount            Decimal       @db.Decimal(10, 2)
+  seats             Int           @default(1)
+  currency          String        @default("INR")
+  status            PaymentStatus @default(created)
+  notes             Json?
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+  plan         Plan          @relation(fields: [planId], references: [id])
+
+  @@index([tenantId])
+  @@map("payments")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -977,6 +1034,9 @@ model ApiKey {
   name         String
   keyPrefix    String    @map("key_prefix")
   keyHash      String    @unique @map("key_hash")
+  // Reversible copy of the key so its owner can re-copy it later. Null for
+  // keys created before this column existed — those can never be revealed again.
+  keyCiphertext String?  @map("key_ciphertext")
   scopes       String[]  @default(["read"])
   createdById  String?   @map("created_by_id")
   lastUsedAt   DateTime? @map("last_used_at")

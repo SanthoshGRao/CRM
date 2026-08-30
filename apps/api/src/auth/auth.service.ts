@@ -11,12 +11,13 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import * as argon2 from 'argon2';
 import { randomBytes, createHash } from 'crypto';
 import { broadestScope, type DataScope } from '../common/rbac/role-definitions';
+import { computeEntitlement, daysLeftInTrial } from '../common/billing/entitlement.util';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
 /** Everything needed to mint an access token and describe a session. */
 const USER_SESSION_INCLUDE = {
-  tenant: true,
+  tenant: { include: { subscription: { include: { plan: true } }, settings: true } },
   userRoles: {
     include: {
       role: { include: { rolePermissions: { include: { permission: true } } } },
@@ -524,11 +525,45 @@ export class AuthService {
         name: user.tenant.name,
         slug: user.tenant.slug,
         status: user.tenant.status,
+        settings: user.tenant.settings
+          ? {
+              timezone: user.tenant.settings.timezone,
+              locale: user.tenant.settings.locale,
+              dateFormat: user.tenant.settings.dateFormat,
+              currency: user.tenant.settings.currency,
+              brandColor: user.tenant.settings.brandColor,
+              emailFooter: user.tenant.settings.emailFooter,
+            }
+          : null,
       },
       roles: user.userRoles.map((ur: any) => ur.role.name),
       permissions,
       dataScope,
+      billing: this.buildBillingSummary(user.tenant.subscription),
       ...(impersonation ? { impersonation } : {}),
+    };
+  }
+
+  /** Plan/subscription summary for the nav bar — same shape the billing module returns. */
+  private buildBillingSummary(subscription: any) {
+    const entitlement = computeEntitlement(subscription);
+
+    return {
+      plan: subscription
+        ? {
+            id: subscription.plan.id,
+            name: subscription.plan.name,
+            price: subscription.plan.price,
+            currency: subscription.plan.currency,
+            interval: subscription.plan.interval,
+          }
+        : null,
+      status: subscription?.status ?? null,
+      currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
+      isEntitled: entitlement.entitled,
+      entitlementReason: entitlement.reason,
+      daysLeft: daysLeftInTrial(subscription),
+      seats: subscription?.seats ?? null,
     };
   }
 

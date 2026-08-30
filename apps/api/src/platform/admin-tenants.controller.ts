@@ -9,7 +9,10 @@ import { PlatformJwtGuard } from './guards/platform-jwt.guard';
 import { CurrentAdmin } from './decorators/current-admin.decorator';
 import { AdminTenantsService } from './admin-tenants.service';
 import { setRefreshCookie } from '../auth/refresh-cookie';
-import { CreateTenantDto, UpdateTenantDto, CreateTenantUserDto } from './dto/admin-tenant.dto';
+import {
+  CreateTenantDto, UpdateTenantDto, CreateTenantUserDto,
+  UpsertSubscriptionDto, ToggleFeatureDto, CreateDomainDto, UpdateDomainDto,
+} from './dto/admin-tenant.dto';
 
 @ApiTags('platform-tenants')
 @ApiBearerAuth()
@@ -102,5 +105,65 @@ export class AdminTenantsController {
     setRefreshCookie(res, this.config, refreshToken, maxAge);
 
     return { success: true, data };
+  }
+
+  // ─── Subscription ──────────────────────────────────────────────────────
+
+  @Post(':id/subscription')
+  @ApiOperation({ summary: 'Assign or change a workspace subscription (upgrade/downgrade)' })
+  async upsertSubscription(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpsertSubscriptionDto) {
+    const data = await this.adminTenantsService.upsertSubscription(id, dto);
+    return { success: true, data, message: 'Subscription updated' };
+  }
+
+  @Post(':id/subscription/cancel')
+  @ApiOperation({ summary: 'Cancel a workspace subscription' })
+  async cancelSubscription(@Param('id', ParseUUIDPipe) id: string) {
+    const data = await this.adminTenantsService.cancelSubscription(id);
+    return { success: true, data, message: 'Subscription cancelled' };
+  }
+
+  // ─── Feature flags ─────────────────────────────────────────────────────
+
+  @Patch(':id/features/:feature')
+  @ApiOperation({ summary: 'Enable or disable a feature for a workspace' })
+  async setFeature(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('feature') feature: string,
+    @Body() dto: ToggleFeatureDto,
+  ) {
+    const data = await this.adminTenantsService.setFeature(id, feature, dto);
+    return { success: true, data };
+  }
+
+  // ─── Custom domains ────────────────────────────────────────────────────
+
+  @Post(':id/domains')
+  @ApiOperation({ summary: 'Attach a custom domain to a workspace' })
+  async addDomain(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CreateDomainDto) {
+    const data = await this.adminTenantsService.addDomain(id, dto);
+    return { success: true, data, message: 'Domain added' };
+  }
+
+  @Patch(':id/domains/:domainId')
+  @ApiOperation({ summary: 'Update a workspace domain (primary / verified)' })
+  async updateDomain(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('domainId', ParseUUIDPipe) domainId: string,
+    @Body() dto: UpdateDomainDto,
+  ) {
+    const data = await this.adminTenantsService.updateDomain(id, domainId, dto);
+    return { success: true, data };
+  }
+
+  @Delete(':id/domains/:domainId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Remove a workspace domain' })
+  async removeDomain(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('domainId', ParseUUIDPipe) domainId: string,
+  ) {
+    const data = await this.adminTenantsService.removeDomain(id, domainId);
+    return { success: true, data, message: 'Domain removed' };
   }
 }

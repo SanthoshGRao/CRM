@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { computeEntitlement } from '../../common/billing/entitlement.util';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -38,12 +39,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // Verify user is still active
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, status: true, tenantId: true },
+      select: {
+        id: true,
+        status: true,
+        tenantId: true,
+        tenant: { select: { subscription: true } },
+      },
     });
 
     if (!user || user.status !== 'active') {
       throw new UnauthorizedException('Account is not active.');
     }
+
+    const entitlement = computeEntitlement(user.tenant?.subscription ?? null);
 
     return {
       id: payload.sub,
@@ -55,6 +63,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       // token minted before scoping existed never hides data unexpectedly.
       dataScope: payload.dataScope ?? 'COMPANY',
       impersonatedBy: payload.impersonatedBy,
+      isEntitled: entitlement.entitled,
+      entitlementReason: entitlement.reason,
     };
   }
 }

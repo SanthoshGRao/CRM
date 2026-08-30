@@ -2,7 +2,7 @@ import { registerAs } from '@nestjs/config';
 
 export const appConfig = registerAs('app', () => ({
   nodeEnv: process.env.NODE_ENV || 'development',
-  port: parseInt(process.env.PORT || '4000', 10),
+  port: parseInt(process.env.PORT || '4001', 10),
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
   cookieSecret: process.env.COOKIE_SECRET || 'change-this-secret-in-production',
 
@@ -12,6 +12,12 @@ export const appConfig = registerAs('app', () => ({
     // different site than the API need 'none' (which forces Secure).
     sameSite: (process.env.COOKIE_SAMESITE || 'lax').toLowerCase() as 'lax' | 'strict' | 'none',
     domain: process.env.COOKIE_DOMAIN || undefined,
+    // Explicit override for whether the refresh cookie gets `Secure`. Browsers
+    // silently discard `Secure` cookies on a plain-HTTP origin, so a
+    // production deployment without TLS in front of it must set this to
+    // "false" or the refresh cookie never gets stored and every reload logs
+    // the user out. Leave unset to fall back to NODE_ENV === 'production'.
+    secure: process.env.COOKIE_SECURE === undefined ? undefined : process.env.COOKIE_SECURE === 'true',
   },
 
   jwt: {
@@ -28,6 +34,15 @@ export const appConfig = registerAs('app', () => ({
 
   // Self-service signup is off: customer companies are provisioned by staff.
   allowPublicRegistration: process.env.ALLOW_PUBLIC_REGISTRATION === 'true',
+
+  apiKeys: {
+    // Encrypts the raw key so its owner can re-copy it later (in addition to
+    // the one-way hash used for auth). Set a dedicated secret in production.
+    encryptionSecret:
+      process.env.API_KEY_ENCRYPTION_SECRET ||
+      process.env.JWT_ACCESS_SECRET ||
+      'api-key-encryption-secret-change-me',
+  },
 
   database: {
     url: process.env.DATABASE_URL,
@@ -55,5 +70,14 @@ export const appConfig = registerAs('app', () => ({
     secretKey: process.env.S3_SECRET_KEY,
     bucket: process.env.S3_BUCKET || 'crm-files',
     region: process.env.S3_REGION || 'us-east-1',
+  },
+
+  billing: {
+    trialDays: parseInt(process.env.BILLING_TRIAL_DAYS || '7', 10),
+    razorpay: {
+      keyId: process.env.RAZORPAY_KEY_ID,
+      keySecret: process.env.RAZORPAY_KEY_SECRET,
+      webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET,
+    },
   },
 }));

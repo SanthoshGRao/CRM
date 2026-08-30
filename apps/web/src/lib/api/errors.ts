@@ -3,7 +3,7 @@ export function getErrorMessage(err: unknown, fallback = 'Something went wrong. 
   const res = (err as any)?.response?.data;
   if (!res) {
     if ((err as any)?.code === 'ERR_NETWORK') {
-      return 'Cannot reach the API server. Make sure it is running on port 4000.';
+      return 'Cannot reach the API server. Make sure it is running on port 4001.';
     }
     return (err as any)?.message || fallback;
   }

@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { PipelinesService } from '../pipelines/pipelines.service';
 import { WorkflowEngineService } from '../workflows/workflow-engine.service';
 import { CreateDealDto } from './dto/create-deal.dto';
 import { UpdateDealDto } from './dto/update-deal.dto';
@@ -16,6 +17,7 @@ const DEAL_INCLUDE = {
 export class DealsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly pipelines: PipelinesService,
     private readonly workflows: WorkflowEngineService,
   ) {}
 
@@ -113,10 +115,24 @@ export class DealsService {
   }
 
   async create(dto: CreateDealDto, tenantId: string, userId: string) {
+    let pipelineId = dto.pipelineId;
+    let stageId = dto.stageId;
+
+    if (!pipelineId || !stageId) {
+      const defaultPipeline = await this.pipelines.findDefault(tenantId, 'deal');
+      if (!defaultPipeline || !defaultPipeline.stages || defaultPipeline.stages.length === 0) {
+        throw new BadRequestException('No pipeline or stages configured for deals.');
+      }
+      pipelineId = pipelineId ?? defaultPipeline.id;
+      stageId = stageId ?? defaultPipeline.stages[0].id;
+    }
+
     const deal = await this.prisma.deal.create({
       data: {
         ...dto,
         tenantId,
+        pipelineId,
+        stageId,
         expectedCloseDate: dto.expectedCloseDate ? new Date(dto.expectedCloseDate) : undefined,
       },
       include: DEAL_INCLUDE,

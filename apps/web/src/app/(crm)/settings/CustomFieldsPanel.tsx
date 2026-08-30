@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Columns3, Plus, Loader2, Trash2, X, Pencil } from 'lucide-react';
+import { Columns3, Plus, Loader2, Trash2, X, Pencil, Users } from 'lucide-react';
 import { clsx } from 'clsx';
-import { customFieldsApi } from '@/lib/api/services';
+import { customFieldsApi, teamsApi, usersApi } from '@/lib/api/services';
 import { getErrorMessage } from '@/lib/api/errors';
 import { Field, ErrorBanner } from '@/components/ui/Field';
 
@@ -13,6 +13,7 @@ export const CUSTOM_FIELD_ENTITIES = [
   { value: 'company', label: 'Companies' },
   { value: 'lead', label: 'Leads' },
   { value: 'deal', label: 'Deals' },
+  { value: 'task', label: 'Tasks' },
 ];
 
 export const CUSTOM_FIELD_TYPES = [
@@ -199,23 +200,16 @@ function FieldForm({
   const [label, setLabel] = useState(field?.label ?? '');
   const [fieldType, setFieldType] = useState(field?.fieldType ?? 'text');
   const [required, setRequired] = useState(field?.required ?? false);
-  const [optionsText, setOptionsText] = useState(
-    (field?.options ?? []).map((o: any) => o.label).join('\n'),
-  );
+  const [options, setOptions] = useState<string[]>((field?.options ?? []).map((o: any) => o.label));
   const [error, setError] = useState<string | null>(null);
 
   const needsOptions = CHOICE_TYPES.includes(fieldType);
+  const cleanOptions = options.map((o) => o.trim()).filter(Boolean);
 
   const save = useMutation({
     mutationFn: () => {
-      const options = optionsText
-        .split('\n')
-        .map((line: string) => line.trim())
-        .filter(Boolean)
-        .map((line: string) => ({ label: line }));
-
       const payload: any = { label: label.trim(), fieldType, required };
-      if (needsOptions) payload.options = options;
+      if (needsOptions) payload.options = cleanOptions.map((label) => ({ label }));
 
       return isEdit
         ? customFieldsApi.update(field.id, payload)
@@ -231,10 +225,6 @@ function FieldForm({
       onSubmit={(e) => {
         e.preventDefault();
         setError(null);
-        if (needsOptions && optionsText.trim() === '') {
-          setError('Add at least one option, one per line.');
-          return;
-        }
         save.mutate();
       }}
     >
@@ -263,10 +253,8 @@ function FieldForm({
         </Field>
 
         {needsOptions && (
-          <Field label="Options" htmlFor="field-options" required hint="One per line" className="sm:col-span-2">
-            <textarea id="field-options" className="input min-h-[100px] font-mono text-xs"
-              placeholder={'North\nSouth\nEast\nWest'}
-              value={optionsText} onChange={(e) => setOptionsText((e.target as HTMLTextAreaElement).value)} />
+          <Field label="Options" htmlFor="field-options" required className="sm:col-span-2">
+            <OptionListEditor options={options} onChange={setOptions} />
           </Field>
         )}
 
@@ -280,12 +268,174 @@ function FieldForm({
       </div>
 
       <div className="mt-3 flex items-center gap-2">
-        <button type="submit" className="btn-primary btn-sm" disabled={save.isPending || !label.trim()}>
+        <button type="submit" className="btn-primary btn-sm"
+          disabled={save.isPending || !label.trim() || (needsOptions && cleanOptions.length === 0)}>
           {save.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Columns3 className="h-3.5 w-3.5" />}
           {isEdit ? 'Save changes' : 'Create field'}
         </button>
         <button type="button" className="btn-secondary btn-sm" onClick={onClose}>Cancel</button>
       </div>
     </form>
+  );
+}
+
+/** Editable list of option rows, each with its own remove button — no raw text entry. */
+function OptionListEditor({ options, onChange }: { options: string[]; onChange: (options: string[]) => void }) {
+  const update = (i: number, value: string) => onChange(options.map((o, idx) => (idx === i ? value : o)));
+  const remove = (i: number) => onChange(options.filter((_, idx) => idx !== i));
+  const add = (values: string[]) => onChange([...options, ...values]);
+
+  return (
+    <div>
+      <div className="space-y-1.5">
+        {options.map((opt, i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <input
+              className="input !h-8 flex-1 text-sm"
+              placeholder="Option"
+              value={opt}
+              autoFocus={i === options.length - 1 && opt === ''}
+              onChange={(e) => update(i, (e.target as HTMLInputElement).value)}
+            />
+            <button type="button" className="shrink-0 rounded p-1.5 text-slate-400 hover:bg-surface-2 hover:text-red-600"
+              onClick={() => remove(i)} aria-label="Remove option">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-2 flex items-center gap-2">
+        <button type="button" className="btn-secondary btn-sm" onClick={() => add([''])}>
+          <Plus className="h-3.5 w-3.5" /> Add option
+        </button>
+        <TeamMemberPicker options={options} onChange={onChange} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Populates options from real team members instead of typing each name —
+ * grouped by group ("team"), with a checkbox per person that toggles
+ * inclusion directly, so the list itself is always the source of truth.
+ */
+function TeamMemberPicker({ options, onChange }: { options: string[]; onChange: (options: string[]) => void }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const { data: users = [] } = useQuery({
+    queryKey: ['team-member-picker', 'users'],
+    queryFn: async () => (await usersApi.list({ limit: 200 })).data ?? [],
+    enabled: open,
+    staleTime: 60_000,
+  });
+
+  const { data: teams = [] } = useQuery({
+    queryKey: ['team-member-picker', 'teams'],
+    queryFn: () => teamsApi.list(),
+    enabled: open,
+    staleTime: 60_000,
+  });
+
+  const teamIds = (teams as any[]).map((t) => t.id).join(',');
+  const { data: teamsWithMembers = [], isLoading } = useQuery({
+    queryKey: ['team-member-picker', 'team-members', teamIds],
+    queryFn: () => Promise.all((teams as any[]).map((t) => teamsApi.get(t.id))),
+    enabled: open && (teams as any[]).length > 0,
+    staleTime: 60_000,
+  });
+
+  const nameOf = (u: any) => `${u.firstName} ${u.lastName}`.trim();
+  const existingLower = new Set(options.map((o) => o.trim().toLowerCase()).filter(Boolean));
+
+  const groupedIds = new Set((teamsWithMembers as any[]).flatMap((t) => (t.members ?? []).map((m: any) => m.id)));
+  const groups = [
+    ...(teamsWithMembers as any[]).map((t) => ({ id: t.id, name: t.name, members: t.members ?? [] })),
+    { id: '__unassigned', name: 'Unassigned', members: (users as any[]).filter((u) => !groupedIds.has(u.id)) },
+  ].filter((g) => g.members.length > 0);
+
+  const query = search.trim().toLowerCase();
+  const visible = groups
+    .map((g) => ({ ...g, members: g.members.filter((m: any) => !query || nameOf(m).toLowerCase().includes(query)) }))
+    .filter((g) => g.members.length > 0);
+
+  const toggleMember = (m: any) => {
+    const lower = nameOf(m).toLowerCase();
+    const idx = options.findIndex((o) => o.trim().toLowerCase() === lower);
+    onChange(idx === -1 ? [...options.filter((o) => o.trim() !== ''), nameOf(m)] : options.filter((_, i) => i !== idx));
+  };
+
+  const toggleGroup = (members: any[]) => {
+    const names = members.map(nameOf);
+    const allIn = names.every((n) => existingLower.has(n.toLowerCase()));
+    if (allIn) {
+      const lowerNames = new Set(names.map((n) => n.toLowerCase()));
+      onChange(options.filter((o) => !lowerNames.has(o.trim().toLowerCase())));
+    } else {
+      const toAdd = names.filter((n) => !existingLower.has(n.toLowerCase()));
+      onChange([...options.filter((o) => o.trim() !== ''), ...toAdd]);
+    }
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button type="button" className="btn-secondary btn-sm" onClick={() => setOpen((o) => !o)}>
+        <Users className="h-3.5 w-3.5" /> Team members
+      </button>
+
+      {open && (
+        <div className="absolute left-0 z-20 mt-1 w-64 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
+          <div className="border-b border-slate-100 p-2">
+            <input
+              autoFocus
+              className="input !h-8 text-sm"
+              placeholder="Search"
+              value={search}
+              onChange={(e) => setSearch((e.target as HTMLInputElement).value)}
+            />
+          </div>
+
+          <div className="max-h-56 overflow-y-auto py-1">
+            {isLoading ? (
+              <div className="space-y-2 p-3">
+                {Array.from({ length: 3 }).map((_, i) => <div key={i} className="skeleton h-4" />)}
+              </div>
+            ) : visible.length === 0 ? (
+              <p className="px-3 py-4 text-center text-xs text-slate-400">No matches</p>
+            ) : (
+              visible.map((g) => {
+                const groupChecked = g.members.every((m: any) => existingLower.has(nameOf(m).toLowerCase()));
+                return (
+                  <div key={g.id} className="py-1">
+                    <label className="flex cursor-pointer items-center gap-2 px-3 py-1 text-xs font-semibold text-slate-500 hover:bg-surface-2">
+                      <input type="checkbox" className="h-3.5 w-3.5 rounded border-slate-300"
+                        checked={groupChecked} onChange={() => toggleGroup(g.members)} />
+                      {g.name}
+                    </label>
+                    {g.members.map((m: any) => (
+                      <label key={m.id} className="flex cursor-pointer items-center gap-2 px-3 py-1.5 pl-8 text-sm text-slate-700 hover:bg-surface-2">
+                        <input type="checkbox" className="h-3.5 w-3.5 rounded border-slate-300"
+                          checked={existingLower.has(nameOf(m).toLowerCase())} onChange={() => toggleMember(m)} />
+                        {nameOf(m)}
+                      </label>
+                    ))}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

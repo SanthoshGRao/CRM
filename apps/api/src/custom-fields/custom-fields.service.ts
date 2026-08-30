@@ -6,11 +6,12 @@ import {
 } from './dto/custom-field.dto';
 
 /** Column on CustomFieldValue that links a value to its record. */
-const ENTITY_FK: Record<string, 'contactId' | 'companyId' | 'leadId' | 'dealId'> = {
+const ENTITY_FK: Record<string, 'contactId' | 'companyId' | 'leadId' | 'dealId' | 'taskId'> = {
   contact: 'contactId',
   company: 'companyId',
   lead: 'leadId',
   deal: 'dealId',
+  task: 'taskId',
 };
 
 const ENTITY_MODEL: Record<string, string> = {
@@ -18,6 +19,7 @@ const ENTITY_MODEL: Record<string, string> = {
   company: 'company',
   lead: 'lead',
   deal: 'deal',
+  task: 'task',
 };
 
 @Injectable()
@@ -27,6 +29,12 @@ export class CustomFieldsService {
   // ─── Field definitions (the customer's "columns") ────────────────────────
 
   async findAll(tenantId: string, query: { entityType?: string; includeInactive?: string }) {
+    // entityType is optional here by design — omitting it lists custom fields
+    // across every entity type, which is what the workspace-wide field admin
+    // screen needs. But an entityType that IS provided must be one of the
+    // four supported types, or Prisma's enum validation throws unhandled.
+    if (query.entityType) this.assertEntity(query.entityType);
+
     const where: any = { tenantId };
     if (query.entityType) where.entityType = query.entityType;
     if (query.includeInactive !== 'true') where.isActive = true;
@@ -179,6 +187,11 @@ export class CustomFieldsService {
       throw new BadRequestException('One or more fields do not exist on this entity.');
     }
 
+    // Resolved once up front (rather than re-derived per phase) so a dropdown/
+    // multi_select value written by label is normalised to its canonical slug
+    // exactly once, and that same canonical value is what both the pre-write
+    // validation and the actual upsert use.
+    const resolved: Record<string, string | null> = {};
     for (const field of fields) {
       const raw = values[field.id];
       const value = raw === null || raw === undefined || raw === '' ? null : String(raw);
@@ -186,13 +199,12 @@ export class CustomFieldsService {
       if (field.required && value === null) {
         throw new BadRequestException(`"${field.label}" is required.`);
       }
-      if (value !== null) this.assertValue(field, value);
+      resolved[field.id] = value === null ? null : this.resolveValue(field, value);
     }
 
     await this.prisma.$transaction(
       fields.map((field) => {
-        const raw = values[field.id];
-        const value = raw === null || raw === undefined || raw === '' ? null : String(raw);
+        const value = resolved[field.id];
 
         if (value === null) {
           return this.prisma.customFieldValue.deleteMany({
@@ -239,7 +251,8 @@ export class CustomFieldsService {
     }
   }
 
-  private assertValue(field: any, value: string) {
+  /** Validates a raw incoming value and returns the canonical form to store. */
+  private resolveValue(field: any, value: string): string {
     switch (field.fieldType) {
       case 'number':
       case 'currency':
@@ -247,42 +260,52 @@ export class CustomFieldsService {
         if (Number.isNaN(Number(value))) {
           throw new BadRequestException(`"${field.label}" must be a number.`);
         }
-        break;
+        return value;
       case 'boolean':
         if (!['true', 'false'].includes(value.toLowerCase())) {
           throw new BadRequestException(`"${field.label}" must be true or false.`);
         }
-        break;
+        return value;
       case 'date':
       case 'datetime':
         if (Number.isNaN(new Date(value).getTime())) {
           throw new BadRequestException(`"${field.label}" must be a valid date.`);
         }
-        break;
+        return value;
       case 'email':
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
           throw new BadRequestException(`"${field.label}" must be a valid email address.`);
         }
-        break;
-      case 'dropdown': {
-        const allowed = field.options.map((o: any) => o.value);
-        if (!allowed.includes(value)) {
-          throw new BadRequestException(`"${field.label}" must be one of: ${allowed.join(', ')}.`);
-        }
-        break;
-      }
-      case 'multi_select': {
-        const allowed = field.options.map((o: any) => o.value);
-        const picked = value.split(',').map((v) => v.trim()).filter(Boolean);
-        const invalid = picked.filter((v) => !allowed.includes(v));
-        if (invalid.length > 0) {
-          throw new BadRequestException(`"${field.label}" has invalid options: ${invalid.join(', ')}.`);
-        }
-        break;
-      }
+        return value;
+      case 'dropdown':
+        return this.resolveOption(field, value);
+      case 'multi_select':
+        return value
+          .split(',')
+          .map((v) => v.trim())
+          .filter(Boolean)
+          .map((v) => this.resolveOption(field, v))
+          .join(',');
       default:
-        break;
+        return value;
     }
+  }
+
+  /**
+   * Accepts either the option's write-key `value` (slug) or its display
+   * `label` (case-insensitively) and normalises to the canonical slug — so a
+   * client that only ever saw the label in the UI doesn't have to look up the
+   * slug separately before it can write the field.
+   */
+  private resolveOption(field: any, input: string): string {
+    const bySlug = field.options.find((o: any) => o.value === input);
+    if (bySlug) return bySlug.value;
+
+    const byLabel = field.options.find((o: any) => o.label.toLowerCase() === input.toLowerCase());
+    if (byLabel) return byLabel.value;
+
+    const allowed = field.options.map((o: any) => o.value).join(', ');
+    throw new BadRequestException(`"${field.label}" must be one of: ${allowed}.`);
   }
 
   private buildOptions(options: CustomFieldOptionDto[]) {

@@ -1,7 +1,7 @@
 import { IsString, IsOptional, IsArray, IsIn, IsDateString, MaxLength, ArrayMinSize } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-export const API_SCOPES = ['read', 'write'] as const;
+export const API_SCOPES = ['read', 'write', 'read:users'] as const;
 export type ApiScope = (typeof API_SCOPES)[number];
 
 export class CreateApiKeyDto {

@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Loader2, Plus, Save, Trash2, X, Zap } from 'lucide-react';
 import { clsx } from 'clsx';
-import { pipelinesApi, usersApi, workflowsApi } from '@/lib/api/services';
+import { customFieldsApi, pipelinesApi, usersApi, workflowsApi } from '@/lib/api/services';
 import { getErrorMessage } from '@/lib/api/errors';
 import { Field, ErrorBanner } from '@/components/ui/Field';
 import {
@@ -17,6 +17,7 @@ import {
   FIELDS,
   FieldDef,
   OPERATORS,
+  ROLE_TARGETS,
   TRIGGERS,
   USER_TARGETS,
   WorkflowTemplate,
@@ -75,9 +76,26 @@ export function WorkflowBuilder({ initial, template, onCancel, onSaved }: Workfl
   const [isActive, setIsActive] = useState<boolean>(seed?.isActive ?? true);
   const [error, setError] = useState<string | null>(null);
 
+  const { data: customFields = [] } = useQuery({
+    queryKey: ['custom-fields', entity],
+    queryFn: () => customFieldsApi.list({ entityType: entity }),
+    staleTime: 60_000,
+  });
+
+  const combinedFields: FieldDef[] = useMemo(() => {
+    const base = FIELDS[entity] || [];
+    const custom: FieldDef[] = (customFields || []).map((cf: any) => ({
+      value: cf.fieldName || cf.label || cf.id,
+      label: `${cf.label} (Custom)`,
+      type: cf.fieldType === 'number' ? 'number' : cf.fieldType === 'date' ? 'date' : cf.fieldType === 'select' ? 'select' : 'text',
+      options: cf.options,
+      hint: 'Custom field',
+    }));
+    return [...base, ...custom];
+  }, [entity, customFields]);
+
   const availableTriggers = TRIGGERS.filter((t) => !t.entities || t.entities.includes(entity));
   const availableActions = ACTIONS.filter((a) => !a.entities || a.entities.includes(entity));
-  const fields = FIELDS[entity];
   const trigger = triggerDef(triggerType);
 
   const labels = useWorkflowLabels();
@@ -191,7 +209,6 @@ export function WorkflowBuilder({ initial, template, onCancel, onSaved }: Workfl
                 className="input"
                 required
                 maxLength={100}
-                placeholder="Follow up on new leads"
                 value={name}
                 onChange={(e) => setName((e.target as HTMLInputElement).value)}
               />
@@ -200,7 +217,6 @@ export function WorkflowBuilder({ initial, template, onCancel, onSaved }: Workfl
               <input
                 id="workflow-description"
                 className="input"
-                placeholder="Optional — what is this for?"
                 value={description}
                 onChange={(e) => setDescription((e.target as HTMLInputElement).value)}
               />
@@ -243,7 +259,7 @@ export function WorkflowBuilder({ initial, template, onCancel, onSaved }: Workfl
                 label="Field to watch"
                 htmlFor="workflow-watch-field"
                 required
-                hint={fields.find((f) => f.value === watchField)?.hint}
+                hint={combinedFields.find((f) => f.value === watchField)?.hint}
               >
                 <select
                   id="workflow-watch-field"
@@ -251,8 +267,8 @@ export function WorkflowBuilder({ initial, template, onCancel, onSaved }: Workfl
                   value={watchField}
                   onChange={(e) => setWatchField((e.target as HTMLSelectElement).value)}
                 >
-                  <option value="">Pick a field…</option>
-                  {fields.map((f) => (
+                  <option value=""></option>
+                  {combinedFields.map((f) => (
                     <option key={f.value} value={f.value}>{f.label}</option>
                   ))}
                 </select>
@@ -270,7 +286,6 @@ export function WorkflowBuilder({ initial, template, onCancel, onSaved }: Workfl
                   entity={entity}
                   value={toStage}
                   onChange={setToStage}
-                  placeholder="Any stage"
                 />
               </Field>
             )}
@@ -287,7 +302,7 @@ export function WorkflowBuilder({ initial, template, onCancel, onSaved }: Workfl
               <ConditionRow
                 key={i}
                 condition={condition}
-                fields={fields}
+                fields={combinedFields}
                 entity={entity}
                 onChange={(next) =>
                   setConditions((prev) => prev.map((c, idx) => (idx === i ? next : c)))
@@ -300,7 +315,7 @@ export function WorkflowBuilder({ initial, template, onCancel, onSaved }: Workfl
               type="button"
               className="btn-secondary btn-sm self-start"
               onClick={() =>
-                setConditions((prev) => [...prev, { field: fields[0].value, operator: 'equals', value: '' }])
+                setConditions((prev) => [...prev, { field: combinedFields[0]?.value ?? '', operator: 'equals', value: '' }])
               }
             >
               <Plus className="h-3.5 w-3.5" /> Add condition
@@ -315,6 +330,8 @@ export function WorkflowBuilder({ initial, template, onCancel, onSaved }: Workfl
                 key={i}
                 action={action}
                 entity={entity}
+                fields={combinedFields}
+                customFields={customFields}
                 available={availableActions}
                 onChange={(next) => setActions((prev) => prev.map((a, idx) => (idx === i ? next : a)))}
                 onRemove={
@@ -445,23 +462,22 @@ function ConditionRow({
 function ValueInput({
   field, entity, value, onChange,
 }: { field: FieldDef; entity: EntityKey; value: string; onChange: (v: string) => void }) {
-  if (field.type === 'select') {
+  if (field?.type === 'select') {
     return (
       <select className="input" value={value} onChange={(e) => onChange((e.target as HTMLSelectElement).value)}>
-        <option value="">Pick a value…</option>
+        <option value=""></option>
         {(field.options ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     );
   }
-  if (field.type === 'user') return <UserSelect value={value} onChange={onChange} />;
-  if (field.type === 'stage') return <StageSelect entity={entity} value={value} onChange={onChange} />;
+  if (field?.type === 'user') return <UserSelect value={value} onChange={onChange} />;
+  if (field?.type === 'stage') return <StageSelect entity={entity} value={value} onChange={onChange} />;
 
   return (
     <input
       className="input"
-      type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
+      type={field?.type === 'number' ? 'number' : field?.type === 'date' ? 'date' : 'text'}
       value={value}
-      placeholder="Value"
       onChange={(e) => onChange((e.target as HTMLInputElement).value)}
     />
   );
@@ -470,10 +486,12 @@ function ValueInput({
 // ─── Actions ─────────────────────────────────────────────────────────────────
 
 function ActionCard({
-  action, entity, available, onChange, onRemove,
+  action, entity, fields, customFields, available, onChange, onRemove,
 }: {
   action: ActionRow;
   entity: EntityKey;
+  fields: FieldDef[];
+  customFields: any[];
   available: ActionDef[];
   onChange: (next: ActionRow) => void;
   onRemove?: () => void;
@@ -524,6 +542,8 @@ function ActionCard({
               key={f.key}
               def={f}
               entity={entity}
+              fields={fields}
+              customFields={customFields}
               value={action.config?.[f.key] ?? ''}
               onChange={(value) => onChange({ ...action, config: { ...action.config, [f.key]: value } })}
             />
@@ -535,9 +555,17 @@ function ActionCard({
 }
 
 function ActionField({
-  def, entity, value, onChange,
-}: { def: ActionFieldDef; entity: EntityKey; value: any; onChange: (v: any) => void }) {
+  def, entity, fields, customFields = [], value, onChange,
+}: {
+  def: ActionFieldDef;
+  entity: EntityKey;
+  fields: FieldDef[];
+  customFields?: any[];
+  value: any;
+  onChange: (v: any) => void;
+}) {
   const id = `action-${def.key}`;
+  const isTextField = def.type === 'text' || def.type === 'textarea';
 
   return (
     <Field label={def.label} htmlFor={id} required={def.required} hint={def.hint}>
@@ -547,19 +575,18 @@ function ActionField({
         <StageSelect id={id} entity={entity} value={String(value ?? '')} onChange={onChange} />
       ) : def.type === 'field' ? (
         <select id={id} className="input" value={String(value ?? '')} onChange={(e) => onChange((e.target as HTMLSelectElement).value)}>
-          <option value="">Pick a field…</option>
-          {FIELDS[entity].map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+          <option value=""></option>
+          {fields.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
         </select>
       ) : def.type === 'select' ? (
         <select id={id} className="input" value={String(value ?? '')} onChange={(e) => onChange((e.target as HTMLSelectElement).value)}>
-          <option value="">Pick one…</option>
+          <option value=""></option>
           {(def.options ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       ) : def.type === 'textarea' ? (
         <textarea
           id={id}
           className="input min-h-[70px]"
-          placeholder={def.placeholder}
           value={String(value ?? '')}
           onChange={(e) => onChange((e.target as HTMLTextAreaElement).value)}
         />
@@ -568,10 +595,49 @@ function ActionField({
           id={id}
           className="input"
           type={def.type === 'number' ? 'number' : 'text'}
-          placeholder={def.placeholder}
           value={String(value ?? '')}
           onChange={(e) => onChange((e.target as HTMLInputElement).value)}
         />
+      )}
+
+      {isTextField && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-medium text-slate-500">Insert tag:</span>
+          <select
+            className="input py-0.5 px-2 text-xs max-w-[220px] h-7 bg-white"
+            value=""
+            onChange={(e) => {
+              const tag = e.target.value;
+              if (tag) {
+                const current = String(value ?? '');
+                const space = current && !current.endsWith(' ') ? ' ' : '';
+                onChange(current + space + tag);
+                e.target.value = '';
+              }
+            }}
+          >
+            <option value="">+ Insert variable {"{{...}}"}</option>
+            <optgroup label="Standard Fields">
+              <option value="{{label}}">Record Name/Title ({"{{label}}"})</option>
+              <option value="{{firstName}}">First Name ({"{{firstName}}"})</option>
+              <option value="{{lastName}}">Last Name ({"{{lastName}}"})</option>
+              <option value="{{email}}">Email ({"{{email}}"})</option>
+              <option value="{{phone}}">Phone ({"{{phone}}"})</option>
+              <option value="{{status}}">Status ({"{{status}}"})</option>
+              <option value="{{company}}">Company ({"{{company}}"})</option>
+              <option value="{{owner}}">Owner ({"{{owner}}"})</option>
+            </optgroup>
+            {customFields && customFields.length > 0 && (
+              <optgroup label="Custom Fields">
+                {customFields.map((cf: any) => (
+                  <option key={cf.id} value={`{{${cf.label}}}`}>
+                    {cf.label} ({`{{${cf.label}}}`})
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+        </div>
       )}
     </Field>
   );
@@ -593,22 +659,31 @@ function UserSelect({
 
   return (
     <select id={id} className="input" value={value} onChange={(e) => onChange((e.target as HTMLSelectElement).value)}>
-      <option value="">{isLoading ? 'Loading…' : 'Pick someone…'}</option>
-      {allowRelative &&
-        USER_TARGETS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-      {users.map((u: any) => <option key={u.id} value={u.id}>{u.label}</option>)}
+      <option value="">{isLoading ? 'Loading…' : ''}</option>
+      {allowRelative && (
+        <optgroup label="Relative to this record">
+          {USER_TARGETS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </optgroup>
+      )}
+      {allowRelative && (
+        <optgroup label="Team">
+          {ROLE_TARGETS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </optgroup>
+      )}
+      <optgroup label="People">
+        {users.map((u: any) => <option key={u.id} value={u.id}>{u.label}</option>)}
+      </optgroup>
     </select>
   );
 }
 
 function StageSelect({
-  entity, value, onChange, id, placeholder,
+  entity, value, onChange, id,
 }: {
   entity: EntityKey;
   value: string;
   onChange: (v: string) => void;
   id?: string;
-  placeholder?: string;
 }) {
   const staged = entity === 'lead' || entity === 'deal';
 
@@ -625,7 +700,7 @@ function StageSelect({
 
   return (
     <select id={id} className="input" value={value} onChange={(e) => onChange((e.target as HTMLSelectElement).value)}>
-      <option value="">{isLoading ? 'Loading…' : (placeholder ?? 'Pick a stage…')}</option>
+      <option value="">{isLoading ? 'Loading…' : ''}</option>
       {pipelines.map((p: any) => (
         <optgroup key={p.id} label={p.name}>
           {(p.stages ?? []).map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { usePermissions } from '@/lib/permissions';
+import { useAuthStore } from '@/stores/auth.store';
 
 /** Each item names the permission required to reach it. */
 const NAV_SECTIONS = [
@@ -43,9 +44,17 @@ const NAV_SECTIONS = [
   },
 ];
 
+const STATUS_LABEL: Record<string, string> = {
+  active: 'Active',
+  trialing: 'Trial',
+  past_due: 'Payment failed',
+  cancelled: 'Cancelled',
+};
+
 export function Sidebar() {
   const pathname = usePathname();
   const { can, roles, isOwnScoped } = usePermissions();
+  const billing = useAuthStore((s) => s.session?.billing);
 
   const sections = NAV_SECTIONS
     .map((section) => ({
@@ -58,7 +67,10 @@ export function Sidebar() {
     <aside className="sidebar">
       {/* Logo */}
       <div className="sidebar-logo">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600">
+        <div
+          className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600"
+          style={{ backgroundColor: 'var(--brand-accent, #4f46e5)' }}
+        >
           <span className="text-sm font-bold text-white">C</span>
         </div>
         <span className="text-sm font-semibold text-white">CRM Platform</span>
@@ -86,8 +98,20 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Bottom: role badge + settings */}
+      {/* Bottom: plan + role badge + settings */}
       <div className="border-t border-slate-700 p-3">
+        {billing?.plan && (
+          <div className="mb-2 px-3">
+            <p className="text-[10px] uppercase tracking-widest text-slate-600">Plan</p>
+            <p className="mt-0.5 text-xs font-medium text-slate-300">
+              {billing.plan.name}
+              {billing.status && <span className="text-slate-500"> · {STATUS_LABEL[billing.status] ?? billing.status}</span>}
+            </p>
+            {billing.status === 'trialing' && (
+              <p className="mt-0.5 text-[10px] text-slate-500">{billing.daysLeft} day{billing.daysLeft === 1 ? '' : 's'} left in trial</p>
+            )}
+          </div>
+        )}
         {roles.length > 0 && (
           <div className="mb-2 px-3">
             <p className="text-[10px] uppercase tracking-widest text-slate-600">Your role</p>

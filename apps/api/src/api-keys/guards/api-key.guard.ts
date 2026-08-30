@@ -1,10 +1,11 @@
 import {
-  Injectable, CanActivate, ExecutionContext, UnauthorizedException, ForbiddenException,
+  Injectable, CanActivate, ExecutionContext, UnauthorizedException, ForbiddenException, HttpException, HttpStatus,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { hashApiKey } from '../api-keys.service';
 import { REQUIRED_SCOPE_KEY } from '../decorators/require-scope.decorator';
+import { computeEntitlement } from '../../common/billing/entitlement.util';
 
 /**
  * Authenticates a customer integration via `X-API-Key` (or `Authorization:
@@ -28,7 +29,11 @@ export class ApiKeyGuard implements CanActivate {
 
     const apiKey = await this.prisma.apiKey.findUnique({
       where: { keyHash: hashApiKey(raw) },
-      include: { tenant: { select: { id: true, name: true, slug: true, status: true } } },
+      include: {
+        tenant: {
+          select: { id: true, name: true, slug: true, status: true, subscription: true },
+        },
+      },
     });
 
     if (!apiKey) throw new UnauthorizedException('Invalid API key.');
@@ -38,6 +43,18 @@ export class ApiKeyGuard implements CanActivate {
     }
     if (apiKey.tenant.status !== 'active') {
       throw new ForbiddenException('This workspace is not active.');
+    }
+
+    const entitlement = computeEntitlement(apiKey.tenant.subscription);
+    if (!entitlement.entitled) {
+      throw new HttpException(
+        {
+          code: 'SUBSCRIPTION_REQUIRED',
+          reason: entitlement.reason,
+          message: 'This workspace needs an active subscription to continue.',
+        },
+        HttpStatus.PAYMENT_REQUIRED,
+      );
     }
 
     const required = this.reflector.getAllAndOverride<string>(REQUIRED_SCOPE_KEY, [
@@ -57,7 +74,9 @@ export class ApiKeyGuard implements CanActivate {
       })
       .catch(() => undefined);
 
-    request.apiKey = { id: apiKey.id, scopes: apiKey.scopes };
+    request.apiKey = {
+      id: apiKey.id, name: apiKey.name, scopes: apiKey.scopes, createdById: apiKey.createdById,
+    };
     request.tenantId = apiKey.tenantId;
     request.tenant = apiKey.tenant;
 

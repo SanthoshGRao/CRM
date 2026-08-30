@@ -174,6 +174,32 @@ export const usersApi = {
   remove: async (id: string) => { const { data } = await api.delete(`/users/${id}`); return data; },
 };
 
+export const teamsApi = {
+  list: async () => { const { data } = await api.get('/teams'); return data.data; },
+  get: async (id: string) => { const { data } = await api.get(`/teams/${id}`); return data.data; },
+  create: async (dto: { name: string; description?: string; managerId?: string }) => {
+    const { data } = await api.post('/teams', dto);
+    return data.data;
+  },
+  update: async (id: string, dto: { name?: string; description?: string; managerId?: string }) => {
+    const { data } = await api.patch(`/teams/${id}`, dto);
+    return data.data;
+  },
+  remove: async (id: string) => { const { data } = await api.delete(`/teams/${id}`); return data; },
+  addMember: async (id: string, userId: string) => {
+    const { data } = await api.post(`/teams/${id}/members`, { userId });
+    return data.data;
+  },
+  removeMember: async (id: string, userId: string) => {
+    const { data } = await api.delete(`/teams/${id}/members/${userId}`);
+    return data.data;
+  },
+  moveMember: async (id: string, userId: string, toTeamId: string) => {
+    const { data } = await api.patch(`/teams/${id}/members/${userId}/move`, { toTeamId });
+    return data.data;
+  },
+};
+
 export const rolesApi = {
   list: async () => { const { data } = await api.get('/roles'); return data.data; },
   get: async (id: string) => { const { data } = await api.get(`/roles/${id}`); return data.data; },
@@ -183,6 +209,7 @@ export const rolesApi = {
 export const apiKeysApi = {
   list: async () => { const { data } = await api.get('/api-keys'); return data.data; },
   create: async (dto: any) => { const { data } = await api.post('/api-keys', dto); return data.data; },
+  reveal: async (id: string) => { const { data } = await api.get(`/api-keys/${id}/reveal`); return data.data; },
   revoke: async (id: string) => { const { data } = await api.post(`/api-keys/${id}/revoke`); return data.data; },
   remove: async (id: string) => { const { data } = await api.delete(`/api-keys/${id}`); return data; },
 };
@@ -202,6 +229,42 @@ export const customFieldsApi = {
   setValues: async (entityType: string, recordId: string, values: Record<string, string | null>) => {
     const { data } = await api.put(`/custom-fields/values/${entityType}/${recordId}`, { values });
     return data.data;
+  },
+};
+
+export type ImportResource = 'contacts' | 'companies' | 'leads';
+
+export interface ImportResult {
+  totalRows: number;
+  created: number;
+  failed: number;
+  errors: Array<{ row: number; message: string }>;
+}
+
+export const importApi = {
+  run: async (
+    resource: ImportResource,
+    payload: { originalFilename: string; contentBase64: string; pipelineId?: string; stageId?: string },
+  ): Promise<ImportResult> => {
+    const { data } = await api.post(`/import/${resource}`, payload);
+    return data.data;
+  },
+
+  /** Downloads a blank template for the resource straight to the browser. */
+  template: async (resource: ImportResource) => {
+    const response = await api.get(`/import/${resource}/template`, { responseType: 'blob' });
+    const contentType = String(
+      response.headers['content-type'] ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    const blob = new Blob([response.data], { type: contentType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${resource}-import-template.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   },
 };
 
@@ -228,4 +291,21 @@ export const authApi = {
   },
   me: async () => { const { data } = await api.get('/auth/me'); return data.data; },
   logout: async () => { await api.post('/auth/logout'); },
+};
+
+export const billingApi = {
+  getSubscription: async () => { const { data } = await api.get('/billing/subscription'); return data.data; },
+  getPayments: async () => { const { data } = await api.get('/billing/payments'); return data.data; },
+  getPlans: async () => { const { data } = await api.get('/billing/plans'); return data.data; },
+  createCheckout: async (planId?: string, seats?: number) => {
+    const body: Record<string, unknown> = {};
+    if (planId) body.planId = planId;
+    if (seats) body.seats = seats;
+    const { data } = await api.post('/billing/checkout', body);
+    return data.data;
+  },
+  verifyPayment: async (dto: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
+    const { data } = await api.post('/billing/verify', dto);
+    return data.data;
+  },
 };

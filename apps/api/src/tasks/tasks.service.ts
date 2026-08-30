@@ -71,7 +71,12 @@ export class TasksService {
   async findOne(id: string, tenantId: string, scope: Record<string, unknown> = {}) {
     const task = await this.prisma.task.findFirst({
       where: { id, tenantId, ...scope },
-      include: TASK_INCLUDE,
+      include: {
+        ...TASK_INCLUDE,
+        customFieldValues: {
+          include: { field: { include: { options: true } } },
+        },
+      },
     });
 
     if (!task) throw new NotFoundException('Task not found');

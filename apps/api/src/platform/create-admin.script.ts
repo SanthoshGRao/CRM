@@ -59,7 +59,7 @@ async function main() {
     });
 
     console.log(`Platform admin ready: ${admin.email} (${admin.id})`);
-    console.log('Sign in at http://localhost:3000/admin/login');
+    console.log('Sign in at http://147.93.108.218:3002/admin/login');
   } finally {
     await prisma.$disconnect();
   }

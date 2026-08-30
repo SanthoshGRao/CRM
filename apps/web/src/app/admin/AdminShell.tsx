@@ -1,15 +1,16 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Building2, LayoutDashboard, LogOut, ShieldCheck } from 'lucide-react';
+import { Building2, LayoutDashboard, LogOut, ShieldCheck, Tag } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAdminStore } from '@/stores/admin.store';
 
 const NAV = [
   { href: '/admin', label: 'Overview', icon: LayoutDashboard, exact: true },
   { href: '/admin/customers', label: 'Customer companies', icon: Building2, exact: false },
+  { href: '/admin/plans', label: 'Plans', icon: Tag, exact: false },
 ];
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {
@@ -19,14 +20,22 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   const isLoginPage = pathname === '/admin/login';
 
+  // The admin session lives in localStorage, but the server-rendered HTML
+  // can't see it, so the first hydration pass always renders as logged out.
+  // Gate the redirect on a client-only render so it never fires against that
+  // stale snapshot — otherwise every reload bounced straight to /admin/login
+  // even though the session was sitting right there in storage.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   // Keep staff pages behind the admin session.
   useEffect(() => {
-    if (!isLoginPage && !isAuthenticated) router.replace('/admin/login');
-  }, [isLoginPage, isAuthenticated, router]);
+    if (mounted && !isLoginPage && !isAuthenticated) router.replace('/admin/login');
+  }, [mounted, isLoginPage, isAuthenticated, router]);
 
   if (isLoginPage) return <>{children}</>;
 
-  if (!isAuthenticated) {
+  if (!mounted || !isAuthenticated) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-surface-1">
         <p className="text-sm text-slate-500">Redirecting to sign in…</p>

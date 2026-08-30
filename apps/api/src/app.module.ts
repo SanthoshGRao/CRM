@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { RolesModule } from './roles/roles.module';
+import { TeamsModule } from './teams/teams.module';
 import { ContactsModule } from './contacts/contacts.module';
 import { CompaniesModule } from './companies/companies.module';
 import { LeadsModule } from './leads/leads.module';
@@ -20,7 +21,9 @@ import { CustomFieldsModule } from './custom-fields/custom-fields.module';
 import { WorkflowsModule } from './workflows/workflows.module';
 import { PlatformModule } from './platform/platform.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
+import { BillingModule } from './billing/billing.module';
 import { DataModule } from './data/data.module';
+import { ImportModule } from './import/import.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { AuditModule } from './audit/audit.module';
 import { HealthModule } from './health/health.module';
@@ -64,6 +67,7 @@ import { HealthModule } from './health/health.module';
     UsersModule,
     TenantsModule,
     RolesModule,
+    TeamsModule,
     ContactsModule,
     CompaniesModule,
     LeadsModule,
@@ -75,7 +79,9 @@ import { HealthModule } from './health/health.module';
     WorkflowsModule,
     PlatformModule,
     ApiKeysModule,
+    BillingModule,
     DataModule,
+    ImportModule,
     DashboardModule,
   ],
   providers: [

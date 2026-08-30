@@ -3,6 +3,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { SubscriptionGuard } from '../common/billing/guards/subscription.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -11,7 +12,7 @@ import { CreateApiKeyDto } from './dto/api-key.dto';
 
 @ApiTags('api-keys')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, SubscriptionGuard, PermissionGuard)
 @Controller('api-keys')
 export class ApiKeysController {
   constructor(private readonly apiKeysService: ApiKeysService) {}
@@ -26,10 +27,18 @@ export class ApiKeysController {
 
   @Post()
   @RequirePermission('api_keys.create')
-  @ApiOperation({ summary: 'Create an API key — the secret is returned only once' })
+  @ApiOperation({ summary: 'Create an API key (can be re-revealed later via GET :id/reveal)' })
   async create(@Body() dto: CreateApiKeyDto, @CurrentUser() user: any) {
     const data = await this.apiKeysService.create(dto, user.tenantId, user.id);
-    return { success: true, data, message: 'API key created. Copy it now — it will not be shown again.' };
+    return { success: true, data, message: 'API key created.' };
+  }
+
+  @Get(':id/reveal')
+  @RequirePermission('api_keys.view')
+  @ApiOperation({ summary: 'Re-fetch the full secret so it can be copied again' })
+  async reveal(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: any) {
+    const data = await this.apiKeysService.reveal(id, user.tenantId);
+    return { success: true, data };
   }
 
   @Post(':id/revoke')

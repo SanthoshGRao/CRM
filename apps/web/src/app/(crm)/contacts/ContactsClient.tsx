@@ -2,13 +2,14 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Plus, Search, Download, MoreHorizontal } from 'lucide-react';
+import { Plus, Search, Download, Upload, MoreHorizontal } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api/client';
 import { Can } from '@/components/ui/Can';
 import { formatDate, getInitials } from '@/lib/utils';
 import type { Contact } from '@crm/types';
 import { clsx } from 'clsx';
+import { ImportDialog } from '@/components/import/ImportDialog';
 
 async function fetchContacts(params: Record<string, any>) {
   const query = new URLSearchParams(
@@ -25,6 +26,7 @@ const STATUS_CLASSES: Record<string, string> = {
 export default function ContactsClient() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [importOpen, setImportOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['contacts', { search, page }],
@@ -43,6 +45,9 @@ export default function ContactsClient() {
         </div>
         <div className="flex items-center gap-2">
           <button className="btn-secondary btn-sm" id="export-contacts-btn"><Download className="h-3.5 w-3.5" /> Export</button>
+          <Can permission="contacts.create">
+            <button className="btn-secondary btn-sm" id="import-contacts-btn" onClick={() => setImportOpen(true)}><Upload className="h-3.5 w-3.5" /> Import</button>
+          </Can>
           <Can permission="contacts.create"><Link href="/contacts/new" className="btn-primary btn-sm" id="create-contact-btn"><Plus className="h-3.5 w-3.5" /> Add Contact</Link></Can>
         </div>
       </div>
@@ -118,6 +123,10 @@ export default function ContactsClient() {
           </div>
         )}
       </div>
+
+      {importOpen && (
+        <ImportDialog resource="contacts" label="contacts" onClose={() => setImportOpen(false)} />
+      )}
     </div>
   );
 }

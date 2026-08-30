@@ -6,6 +6,7 @@ import {
   ActionOutcome,
   ENTITY_FIELDS,
   ENTITY_LABEL_FIELD,
+  isRoleTarget,
   NUMERIC_FIELDS,
   OWNER_FIELD,
   STAGED_ENTITIES,
@@ -94,18 +95,6 @@ export class WorkflowEngineService {
     }
   }
 
-  evaluateConditions(conditions: unknown, record: Record<string, any>) {
-    const results = this.asArray<WorkflowCondition>(conditions).map((condition) => {
-      const actual = record[condition.field];
-      return {
-        ...condition,
-        actual: this.asText(actual),
-        passed: this.testCondition(condition, actual),
-      };
-    });
-
-    return { passed: results.every((r) => r.passed), results };
-  }
 
   private testCondition(condition: WorkflowCondition, actual: unknown): boolean {
     const expected = condition.value ?? '';
@@ -137,14 +126,113 @@ export class WorkflowEngineService {
 
   // ─── Execution ─────────────────────────────────────────────────────────────
 
+  private async buildRecordContext(event: WorkflowEvent): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    const norm = (s: string) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const label = this.labelFor(event.entity, event.record);
+    map.set('label', label);
+    map.set('norm_label', norm(label));
+
+    const record = event.record || {};
+
+    // Standard properties on record
+    for (const key of Object.keys(record)) {
+      const val = this.asText(record[key]);
+      if (val) {
+        map.set(key, val);
+        map.set(norm(key), val);
+      }
+    }
+
+    // Handle common aliases for fields:
+    const firstName = record.firstName || record.first_name || '';
+    const lastName = record.lastName || record.last_name || '';
+    if (firstName) {
+      map.set('firstname', firstName);
+      map.set('first_name', firstName);
+      map.set('firstName', firstName);
+    }
+    if (lastName) {
+      map.set('lastname', lastName);
+      map.set('last_name', lastName);
+      map.set('lastName', lastName);
+    }
+    const fullName = [firstName, lastName].filter(Boolean).join(' ') || record.name || record.title || label;
+    if (fullName) {
+      map.set('fullname', fullName);
+      map.set('full_name', fullName);
+      map.set('name', fullName);
+    }
+
+    if (record.email) map.set('email', record.email);
+    if (record.phone) map.set('phone', record.phone);
+    if (record.mobile) map.set('mobile', record.mobile);
+    if (record.title) map.set('title', record.title);
+    if (record.status) map.set('status', record.status);
+
+    // Custom field values for this record
+    try {
+      const fkMap: Record<string, string> = {
+        contact: 'contactId',
+        company: 'companyId',
+        lead: 'leadId',
+        deal: 'dealId',
+        task: 'taskId',
+      };
+      const fk = fkMap[event.entity];
+      if (fk && event.record.id) {
+        const customValues = await this.prisma.customFieldValue.findMany({
+          where: {
+            tenantId: event.tenantId,
+            entityType: event.entity as any,
+            [fk]: event.record.id,
+          },
+          include: { field: true },
+        });
+
+        for (const cv of customValues) {
+          if (cv.value && cv.field) {
+            const val = cv.value;
+            map.set(cv.fieldId, val);
+            map.set(cv.field.fieldName, val);
+            map.set(cv.field.label, val);
+            map.set(norm(cv.field.fieldName), val);
+            map.set(norm(cv.field.label), val);
+          }
+        }
+      }
+    } catch (err: any) {
+      this.logger.error(`Failed to load custom fields context for ${event.entity}: ${err?.message}`);
+    }
+
+    return map;
+  }
+
+  evaluateConditions(conditions: unknown, record: Record<string, any>, contextMap?: Map<string, string>) {
+    const norm = (s: string) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const results = this.asArray<WorkflowCondition>(conditions).map((condition) => {
+      const normField = norm(condition.field);
+      const actual = contextMap?.get(normField) ?? contextMap?.get(condition.field) ?? record[condition.field];
+      return {
+        ...condition,
+        actual: this.asText(actual),
+        passed: this.testCondition(condition, actual),
+      };
+    });
+
+    return { passed: results.every((r) => r.passed), results };
+  }
+
   private async execute(
     workflow: { id: string; name: string; conditions: any; actions: any },
     event: WorkflowEvent,
   ) {
     const startedAt = new Date();
+    const contextMap = await this.buildRecordContext(event);
     const conditions = this.asArray<WorkflowCondition>(workflow.conditions);
     const actions = this.asArray<WorkflowAction>(workflow.actions);
-    const check = this.evaluateConditions(conditions, event.record);
+    const check = this.evaluateConditions(conditions, event.record, contextMap);
 
     const triggerData = {
       entity: event.entity,
@@ -173,7 +261,7 @@ export class WorkflowEngineService {
 
     const outcomes: ActionOutcome[] = [];
     for (const action of actions) {
-      outcomes.push(await this.runAction(action, event));
+      outcomes.push(await this.runAction(action, event, contextMap));
     }
 
     const failed = outcomes.filter((o) => o.status === 'failed');
@@ -200,7 +288,7 @@ export class WorkflowEngineService {
     await this.logActivity(workflow.name, event, outcomes);
   }
 
-  private async runAction(action: WorkflowAction, event: WorkflowEvent): Promise<ActionOutcome> {
+  private async runAction(action: WorkflowAction, event: WorkflowEvent, contextMap?: Map<string, string>): Promise<ActionOutcome> {
     const config = action.config ?? {};
 
     if (event.action === 'deleted' && MUTATING_ACTIONS.has(action.type)) {
@@ -214,7 +302,7 @@ export class WorkflowEngineService {
     try {
       switch (action.type) {
         case 'create_task':
-          return await this.createTask(config, event);
+          return await this.createTask(config, event, contextMap);
         case 'assign_record':
           return await this.assignRecord(config, event);
         case 'update_field':
@@ -222,9 +310,9 @@ export class WorkflowEngineService {
         case 'move_stage':
           return await this.moveStage(config, event);
         case 'notify_user':
-          return await this.notifyUser(config, event);
+          return await this.notifyUser(config, event, contextMap);
         case 'send_email':
-          return await this.sendEmail(config, event);
+          return await this.sendEmail(config, event, contextMap);
         case 'webhook':
           return await this.callWebhook(config, event);
         case 'send_whatsapp':
@@ -243,9 +331,9 @@ export class WorkflowEngineService {
 
   // ─── Actions ───────────────────────────────────────────────────────────────
 
-  private async createTask(config: any, event: WorkflowEvent): Promise<ActionOutcome> {
+  private async createTask(config: any, event: WorkflowEvent, contextMap?: Map<string, string>): Promise<ActionOutcome> {
     const label = this.labelFor(event.entity, event.record);
-    const title = this.render(config.title || `Follow up: {{label}}`, event.record, label);
+    const title = this.render(config.title || `Follow up: {{label}}`, event.record, label, contextMap);
     const dueInDays = Number(config.dueInDays ?? 0);
 
     const task = await this.prisma.task.create({
@@ -253,9 +341,9 @@ export class WorkflowEngineService {
         tenantId: event.tenantId,
         title,
         description: config.description
-          ? this.render(config.description, event.record, label)
+          ? this.render(config.description, event.record, label, contextMap)
           : undefined,
-        assignedToId: this.resolveUser(config.assignTo, event),
+        assignedToId: await this.resolveUser(config.assignTo, event),
         createdById: event.actorId,
         dueDate: dueInDays > 0 ? new Date(Date.now() + dueInDays * 86_400_000) : undefined,
         priority: config.priority ?? 'medium',
@@ -275,7 +363,7 @@ export class WorkflowEngineService {
   }
 
   private async assignRecord(config: any, event: WorkflowEvent): Promise<ActionOutcome> {
-    const userId = this.resolveUser(config.userId ?? config.assignTo, event);
+    const userId = await this.resolveUser(config.userId ?? config.assignTo, event);
     if (!userId) {
       return { type: 'assign_record', status: 'skipped', detail: 'No user to assign to.' };
     }
@@ -292,16 +380,55 @@ export class WorkflowEngineService {
 
   private async updateField(config: any, event: WorkflowEvent): Promise<ActionOutcome> {
     const field = String(config.field ?? '');
-    if (!ENTITY_FIELDS[event.entity].includes(field)) {
-      return {
-        type: 'update_field',
-        status: 'skipped',
-        detail: `"${field}" is not a field a workflow can set on a ${event.entity}.`,
-      };
+    if (ENTITY_FIELDS[event.entity].includes(field)) {
+      await this.updateRecord(event, { [field]: this.coerce(field, config.value) });
+      return { type: 'update_field', status: 'success', detail: `Set ${field} to "${config.value}"` };
     }
 
-    await this.updateRecord(event, { [field]: this.coerce(field, config.value) });
-    return { type: 'update_field', status: 'success', detail: `Set ${field} to "${config.value}"` };
+    // Check if field matches a CustomField (by id, fieldName, or label)
+    const customField = await this.prisma.customField.findFirst({
+      where: {
+        tenantId: event.tenantId,
+        entityType: event.entity as any,
+        OR: [
+          { id: field },
+          { fieldName: field },
+          { label: { equals: field, mode: 'insensitive' } },
+        ],
+      },
+    });
+
+    if (customField) {
+      const fkMap: Record<string, string> = {
+        contact: 'contactId',
+        company: 'companyId',
+        lead: 'leadId',
+        deal: 'dealId',
+        task: 'taskId',
+      };
+      const fk = fkMap[event.entity];
+      const val = String(config.value ?? '');
+      if (fk && event.record.id) {
+        await this.prisma.customFieldValue.upsert({
+          where: { [`fieldId_${fk}`]: { fieldId: customField.id, [fk]: event.record.id } } as any,
+          create: {
+            tenantId: event.tenantId,
+            fieldId: customField.id,
+            entityType: event.entity as any,
+            [fk]: event.record.id,
+            value: val,
+          } as any,
+          update: { value: val },
+        });
+        return { type: 'update_field', status: 'success', detail: `Set custom field "${customField.label}" to "${config.value}"` };
+      }
+    }
+
+    return {
+      type: 'update_field',
+      status: 'skipped',
+      detail: `"${field}" is not a field a workflow can set on a ${event.entity}.`,
+    };
   }
 
   private async moveStage(config: any, event: WorkflowEvent): Promise<ActionOutcome> {
@@ -320,28 +447,32 @@ export class WorkflowEngineService {
     return { type: 'move_stage', status: 'success', detail: `Moved to ${stage.name}` };
   }
 
-  private async notifyUser(config: any, event: WorkflowEvent): Promise<ActionOutcome> {
-    const userId = this.resolveUser(config.userId ?? config.notify, event);
-    if (!userId) {
+  private async notifyUser(config: any, event: WorkflowEvent, contextMap?: Map<string, string>): Promise<ActionOutcome> {
+    const userIds = await this.resolveUsers(config.userId ?? config.notify, event);
+    if (userIds.length === 0) {
       return { type: 'notify_user', status: 'skipped', detail: 'No user to notify.' };
     }
 
     const label = this.labelFor(event.entity, event.record);
-    await this.prisma.notification.create({
-      data: {
+    await this.prisma.notification.createMany({
+      data: userIds.map((userId) => ({
         tenantId: event.tenantId,
         userId,
         type: 'workflow',
-        title: this.render(config.title || `${event.entity} update`, event.record, label),
-        body: this.render(config.body || `${label} was ${event.action}.`, event.record, label),
+        title: this.render(config.title || `${event.entity} update`, event.record, label, contextMap),
+        body: this.render(config.body || `${label} was ${event.action}.`, event.record, label, contextMap),
         link: `/${event.entity}s/${event.record.id}`,
-      },
+      })),
     });
 
-    return { type: 'notify_user', status: 'success', detail: 'Notification created' };
+    return {
+      type: 'notify_user',
+      status: 'success',
+      detail: userIds.length === 1 ? 'Notification created' : `Notified ${userIds.length} people`,
+    };
   }
 
-  private async sendEmail(config: any, event: WorkflowEvent): Promise<ActionOutcome> {
+  private async sendEmail(config: any, event: WorkflowEvent, contextMap?: Map<string, string>): Promise<ActionOutcome> {
     const { host, port, user, pass, from } = this.config.get('app.email') ?? ({} as any);
     if (!user || !pass) {
       return {
@@ -364,11 +495,14 @@ export class WorkflowEngineService {
       auth: { user, pass },
     });
 
+    const settings = await this.prisma.tenantSettings.findUnique({ where: { tenantId: event.tenantId } });
+    const body = this.render(config.body || `${label} was ${event.action}.`, event.record, label, contextMap);
+
     await transport.sendMail({
       from,
       to,
-      subject: this.render(config.subject || `Update on ${label}`, event.record, label),
-      text: this.render(config.body || `${label} was ${event.action}.`, event.record, label),
+      subject: this.render(config.subject || `Update on ${label}`, event.record, label, contextMap),
+      text: settings?.emailFooter ? `${body}\n\n--\n${settings.emailFooter}` : body,
     });
 
     return { type: 'send_email', status: 'success', detail: `Emailed ${to}` };
@@ -414,11 +548,53 @@ export class WorkflowEngineService {
     Object.assign(event.record, data);
   }
 
-  private resolveUser(target: UserTarget | undefined, event: WorkflowEvent): string | null {
+  /** Resolves a target to a single user — a role/team target is narrowed by round robin. */
+  private async resolveUser(target: UserTarget | undefined, event: WorkflowEvent): Promise<string | null> {
     if (!target) return null;
     if (target === 'actor') return event.actorId;
     if (target === 'record_owner') return event.record[OWNER_FIELD[event.entity]] ?? null;
+    if (isRoleTarget(target)) {
+      const ids = await this.resolveRoleUserIds(event.tenantId, target);
+      return this.pickRoundRobin(event.tenantId, target, ids);
+    }
     return target;
+  }
+
+  /** Resolves a target to every user it covers — a role/team target notifies the whole group. */
+  private async resolveUsers(target: UserTarget | undefined, event: WorkflowEvent): Promise<string[]> {
+    if (!target) return [];
+    if (isRoleTarget(target)) return this.resolveRoleUserIds(event.tenantId, target);
+    const userId = await this.resolveUser(target, event);
+    return userId ? [userId] : [];
+  }
+
+  /** Active users covered by a "team:all" or "role:<name>" target, in a stable order. */
+  private async resolveRoleUserIds(tenantId: string, target: string): Promise<string[]> {
+    const roleName = target === 'team:all' ? null : target.slice('role:'.length);
+    const users = await this.prisma.user.findMany({
+      where: {
+        tenantId,
+        status: 'active',
+        ...(roleName ? { userRoles: { some: { role: { name: roleName } } } } : {}),
+      },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    });
+    return users.map((u) => u.id);
+  }
+
+  /** Advances a per-tenant, per-target cursor so repeated runs cycle through the group evenly. */
+  private async pickRoundRobin(tenantId: string, target: string, ids: string[]): Promise<string | null> {
+    if (ids.length === 0) return null;
+    if (ids.length === 1) return ids[0];
+
+    const cursor = await this.prisma.workflowRoleCursor.upsert({
+      where: { tenantId_target: { tenantId, target } },
+      create: { tenantId, target, cursor: 0 },
+      update: { cursor: { increment: 1 } },
+    });
+
+    return ids[cursor.cursor % ids.length];
   }
 
   private async resolveEmail(target: string | undefined, event: WorkflowEvent): Promise<string | null> {
@@ -465,11 +641,27 @@ export class WorkflowEngineService {
       .catch(() => undefined);
   }
 
-  /** Replaces `{{field}}` placeholders, plus `{{label}}` for the record's name. */
-  private render(template: string, record: Record<string, any>, label: string): string {
-    return String(template).replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, key) =>
-      key === 'label' ? label : this.asText(record[key]),
-    );
+  /** Replaces `{{field}}` placeholders, plus `{{label}}` for the record's name. Supports case-insensitivity, field aliases, and custom fields. */
+  private render(template: string, record: Record<string, any>, label: string, contextMap?: Map<string, string>): string {
+    if (!template) return '';
+    const norm = (s: string) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    return String(template).replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_match, rawKey) => {
+      const key = rawKey.trim();
+      if (key === 'label') return label;
+
+      if (contextMap) {
+        if (contextMap.has(key)) return contextMap.get(key)!;
+        const nKey = norm(key);
+        if (contextMap.has(nKey)) return contextMap.get(nKey)!;
+      }
+
+      if (record && record[key] !== undefined && record[key] !== null) {
+        return this.asText(record[key]);
+      }
+
+      return '';
+    });
   }
 
   private labelFor(entity: WorkflowEntity, record: Record<string, any>): string {

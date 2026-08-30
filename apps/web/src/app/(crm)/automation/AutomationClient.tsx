@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Plus, Zap, Trash2, Loader2, Pencil, Play, History, CheckCircle2,
+  Plus, Zap, Trash2, Loader2, Pencil, History, CheckCircle2,
   XCircle, MinusCircle, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -127,7 +127,7 @@ function Templates({ onPick }: { onPick: (t: WorkflowTemplate) => void }) {
   return (
     <div className="card">
       <div className="card-header">
-        <h3 className="text-sm font-semibold text-slate-800">Start from a recipe</h3>
+        <h3 className="text-sm font-semibold text-slate-800">Templates</h3>
       </div>
       <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
         {TEMPLATES.map((t) => (
@@ -155,7 +155,7 @@ function EmptyState({
         <div className="empty-state-icon"><Zap className="h-8 w-8" /></div>
         <p className="empty-state-title">No workflows yet</p>
         <p className="empty-state-desc">
-          Pick a recipe below to get something useful running in a few clicks, or start from scratch.
+          Pick a template below to get something useful running in a few clicks, or start from scratch.
         </p>
         <button className="btn-primary" onClick={onBlank}>
           <Plus className="h-4 w-4" /> Start from scratch
@@ -280,18 +280,10 @@ const STATUS_STYLE: Record<string, { icon: typeof CheckCircle2; className: strin
 function WorkflowRuns({ workflow, labels }: { workflow: any; labels: Record<string, string> }) {
   const workflowId = workflow.id;
   const isActive = workflow.isActive;
-  const [simulation, setSimulation] = useState<any | null>(null);
-  const [simError, setSimError] = useState<string | null>(null);
 
   const { data: runs = [], isLoading } = useQuery({
     queryKey: ['workflow-executions', workflowId],
     queryFn: () => workflowsApi.executions(workflowId),
-  });
-
-  const simulate = useMutation({
-    mutationFn: () => workflowsApi.simulate(workflowId),
-    onSuccess: (result) => { setSimError(null); setSimulation(result); },
-    onError: (err) => { setSimulation(null); setSimError(getErrorMessage(err)); },
   });
 
   return (
@@ -302,62 +294,7 @@ function WorkflowRuns({ workflow, labels }: { workflow: any; labels: Record<stri
         only listed once the trigger matches.
       </p>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recent runs</p>
-        <button className="btn-secondary btn-sm" onClick={() => simulate.mutate()} disabled={simulate.isPending}>
-          {simulate.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-          Test against a real record
-        </button>
-      </div>
-
-      <ErrorBanner message={simError} />
-
-      {simulation && (
-        <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
-          <p className="text-sm font-medium text-slate-800">
-            {simulation.sampled
-              ? `Tested against "${simulation.sampled.label}"`
-              : 'Nothing to test against'}
-          </p>
-          <p className={clsx('mt-0.5 text-xs', simulation.matched ? 'text-emerald-600' : 'text-amber-600')}>
-            {simulation.message}
-          </p>
-
-          {(simulation.conditions ?? []).length > 0 && (
-            <ul className="mt-2 space-y-1">
-              {simulation.conditions.map((c: any, i: number) => (
-                <li key={i} className="flex items-center gap-1.5 text-xs text-slate-600">
-                  {c.passed
-                    ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                    : <XCircle className="h-3.5 w-3.5 text-red-500" />}
-                  {c.field ?? 'field'} {String(c.operator ?? '').replace(/_/g, ' ')}
-                  {c.value ? ` "${c.value}"` : ''}
-                  <span className="text-slate-400">— actual: {c.actual || '(empty)'}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {simulation.matched && (
-            (simulation.actions ?? []).length > 0 ? (
-              <p className="mt-2 text-xs text-slate-500">
-                Would run: {simulation.actions.map((a: any) => actionDef(a.type)?.label ?? a.type).join(', ')}.
-                Nothing was changed by this test.
-              </p>
-            ) : (
-              <p className="mt-2 text-xs text-amber-600">
-                This rule has no valid actions saved, so nothing would happen. Open Edit and re-save it.
-              </p>
-            )
-          )}
-
-          {!isActive && (
-            <p className="mt-2 text-xs text-amber-600">
-              This workflow is paused, so it will not run for real until you activate it.
-            </p>
-          )}
-        </div>
-      )}
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recent runs</p>
 
       {isLoading ? (
         <div className="mt-3 space-y-2">

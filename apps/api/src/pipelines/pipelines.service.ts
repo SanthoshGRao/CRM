@@ -81,7 +81,7 @@ export class PipelinesService {
   }
 
   private async createDefault(tenantId: string, entityType: EntityType) {
-    return this.prisma.pipeline.create({
+    const pipeline = await this.prisma.pipeline.create({
       data: {
         tenantId,
         name: entityType === 'lead' ? 'Sales Pipeline' : 'Deal Pipeline',
@@ -91,5 +91,15 @@ export class PipelinesService {
       },
       include: PIPELINE_INCLUDE as any,
     });
+
+    if (!pipeline.stages || (pipeline.stages as any[]).length === 0) {
+      const stages = await this.prisma.pipelineStage.findMany({
+        where: { pipelineId: pipeline.id },
+        orderBy: { displayOrder: 'asc' },
+      });
+      return { ...pipeline, stages };
+    }
+
+    return pipeline;
   }
 }

@@ -2,13 +2,14 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Plus, Search, Download, MoreHorizontal, Building2 } from 'lucide-react';
+import { Plus, Search, Download, Upload, MoreHorizontal, Building2 } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api/client';
 import { Can } from '@/components/ui/Can';
 import { formatDate, formatCurrency, getInitials } from '@/lib/utils';
 import type { Company } from '@crm/types';
 import { clsx } from 'clsx';
+import { ImportDialog } from '@/components/import/ImportDialog';
 
 async function fetchCompanies(params: Record<string, any>) {
   const query = new URLSearchParams(
@@ -25,6 +26,7 @@ const STATUS_CLASSES: Record<string, string> = {
 export default function CompaniesClient() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [importOpen, setImportOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['companies', { search, page }],
@@ -44,6 +46,9 @@ export default function CompaniesClient() {
         </div>
         <div className="flex items-center gap-2">
           <button className="btn-secondary btn-sm" id="export-companies-btn"><Download className="h-3.5 w-3.5" /> Export</button>
+          <Can permission="companies.create">
+            <button className="btn-secondary btn-sm" id="import-companies-btn" onClick={() => setImportOpen(true)}><Upload className="h-3.5 w-3.5" /> Import</button>
+          </Can>
           <Can permission="companies.create"><Link href="/companies/new" className="btn-primary btn-sm" id="create-company-btn"><Plus className="h-3.5 w-3.5" /> Add Company</Link></Can>
         </div>
       </div>
@@ -118,6 +123,10 @@ export default function CompaniesClient() {
           </div>
         )}
       </div>
+
+      {importOpen && (
+        <ImportDialog resource="companies" label="companies" onClose={() => setImportOpen(false)} />
+      )}
     </div>
   );
 }

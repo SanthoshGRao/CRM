@@ -5,20 +5,72 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(amount: number, currency = 'INR'): string {
-  return new Intl.NumberFormat('en-IN', {
+/**
+ * Workspace-wide regional preferences (Settings → Preferences). Kept as a
+ * module-level default so the ~40 existing `formatDate`/`formatCurrency`
+ * call sites pick up the tenant's saved settings without threading props —
+ * see PreferencesSync, which calls setAppPreferences() from the session.
+ */
+export interface AppPreferences {
+  dateFormat: string;
+  currency: string;
+  locale: string;
+  timezone: string;
+}
+
+let currentPreferences: AppPreferences = {
+  dateFormat: 'DD/MM/YYYY',
+  currency: 'INR',
+  locale: 'en-IN',
+  timezone: 'Asia/Kolkata',
+};
+
+export function setAppPreferences(prefs: Partial<AppPreferences>) {
+  currentPreferences = { ...currentPreferences, ...prefs };
+}
+
+/** Just the symbol ("₹", "$", "€"…) for compact displays that build their own "12.5L"/"12K" suffixes. */
+export function getCurrencySymbol(currency = currentPreferences.currency): string {
+  return (
+    new Intl.NumberFormat(currentPreferences.locale, {
+      style: 'currency',
+      currency,
+      currencyDisplay: 'narrowSymbol',
+      maximumFractionDigits: 0,
+    })
+      .formatToParts(0)
+      .find((p) => p.type === 'currency')?.value ?? currency
+  );
+}
+
+export function formatCurrency(amount: number, currency = currentPreferences.currency): string {
+  return new Intl.NumberFormat(currentPreferences.locale, {
     style: 'currency',
     currency,
     maximumFractionDigits: 0,
   }).format(amount);
 }
 
-export function formatDate(date: string | Date): string {
-  return new Date(date).toLocaleDateString('en-IN', {
-    day: 'numeric',
-    month: 'short',
+export function formatDate(date: string | Date, format = currentPreferences.dateFormat): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: currentPreferences.timezone,
+    day: '2-digit',
+    month: '2-digit',
     year: 'numeric',
-  });
+  }).formatToParts(new Date(date));
+  const day = parts.find((p) => p.type === 'day')?.value ?? '';
+  const month = parts.find((p) => p.type === 'month')?.value ?? '';
+  const year = parts.find((p) => p.type === 'year')?.value ?? '';
+
+  switch (format) {
+    case 'MM/DD/YYYY':
+      return `${month}/${day}/${year}`;
+    case 'YYYY-MM-DD':
+      return `${year}-${month}-${day}`;
+    case 'DD/MM/YYYY':
+    default:
+      return `${day}/${month}/${year}`;
+  }
 }
 
 export function formatRelativeTime(date: string | Date): string {

@@ -4,10 +4,11 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Save } from 'lucide-react';
-import { tasksApi, leadsApi, dealsApi } from '@/lib/api/services';
+import { tasksApi, leadsApi, dealsApi, customFieldsApi } from '@/lib/api/services';
 import { getErrorMessage } from '@/lib/api/errors';
 import { Field, ErrorBanner } from '@/components/ui/Field';
 import { RecordSelect } from '@/components/ui/RecordSelect';
+import { CustomFieldInputs, type CustomFieldValues } from '@/components/ui/CustomFieldInputs';
 
 export const TASK_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 export const TASK_STATUSES = ['pending', 'in_progress', 'completed', 'cancelled'];
@@ -64,14 +65,16 @@ function toPayload(values: TaskFormValues, isUpdate: boolean) {
 interface TaskFormProps {
   taskId?: string;
   initialValues?: TaskFormValues;
+  initialCustomValues?: Array<{ fieldId: string; value: string | null }>;
   onCancel?: () => void;
   onSaved?: (task: any) => void;
 }
 
-export function TaskForm({ taskId, initialValues, onCancel, onSaved }: TaskFormProps) {
+export function TaskForm({ taskId, initialValues, initialCustomValues, onCancel, onSaved }: TaskFormProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [values, setValues] = useState<TaskFormValues>(initialValues ?? EMPTY);
+  const [customValues, setCustomValues] = useState<CustomFieldValues>({});
   const [error, setError] = useState<string | null>(null);
 
   const set = (key: keyof TaskFormValues) => (value: string) =>
@@ -94,11 +97,19 @@ export function TaskForm({ taskId, initialValues, onCancel, onSaved }: TaskFormP
   const save = useMutation({
     mutationFn: async () => {
       const payload = toPayload(values, Boolean(taskId));
-      return taskId ? tasksApi.update(taskId, payload) : tasksApi.create(payload);
+      const task = taskId ? await tasksApi.update(taskId, payload) : await tasksApi.create(payload);
+
+      // Custom values are stored separately, keyed by the record's id.
+      if (Object.keys(customValues).length > 0) {
+        await customFieldsApi.setValues('task', task.id, customValues);
+      }
+
+      return task;
     },
     onSuccess: (task: any) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
       queryClient.invalidateQueries({ queryKey: ['task', taskId] });
+      queryClient.invalidateQueries({ queryKey: ['custom-fields'] });
       if (onSaved) onSaved(task);
       else router.push(`/tasks/${task.id}`);
     },
@@ -176,6 +187,13 @@ export function TaskForm({ taskId, initialValues, onCancel, onSaved }: TaskFormP
           </Field>
         </div>
       </div>
+
+      <CustomFieldInputs
+        entityType="task"
+        values={customValues}
+        onChange={setCustomValues}
+        initialFrom={initialCustomValues}
+      />
 
       <div className="flex items-center gap-2">
         <button type="submit" className="btn-primary" id="save-task-btn" disabled={save.isPending}>

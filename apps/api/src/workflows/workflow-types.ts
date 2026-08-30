@@ -75,8 +75,27 @@ export interface WorkflowAction {
   config?: Record<string, any>;
 }
 
-/** Who an action targets: the record's owner, whoever triggered it, or a specific user. */
+/** Who an action targets: the record's owner, whoever triggered it, a role/team, or a specific user. */
 export type UserTarget = 'record_owner' | 'actor' | string;
+
+/**
+ * Team/role targets a user picker also accepts. Resolved to one or more real
+ * users at run time — "team:all" and "role:*" ("role:Sales Rep" etc.) map to
+ * whoever currently holds that role in the tenant, chosen round-robin for
+ * single-target actions or notified as a group for broadcast ones.
+ */
+export const ROLE_TARGETS: Array<{ value: string; label: string }> = [
+  { value: 'team:all', label: 'All members' },
+  { value: 'role:Owner', label: 'Owner' },
+  { value: 'role:Developer', label: 'Developer' },
+  { value: 'role:Manager', label: 'Manager' },
+  { value: 'role:Sales Rep', label: 'Sales representatives' },
+  { value: 'role:Viewer', label: 'Viewer' },
+];
+
+export function isRoleTarget(target: string | undefined): target is string {
+  return target === 'team:all' || (!!target && target.startsWith('role:'));
+}
 
 export interface WorkflowEvent {
   tenantId: string;

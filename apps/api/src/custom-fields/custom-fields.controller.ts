@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { SubscriptionGuard } from '../common/billing/guards/subscription.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -14,7 +15,7 @@ import {
 
 @ApiTags('custom-fields')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, SubscriptionGuard, PermissionGuard)
 @Controller('custom-fields')
 export class CustomFieldsController {
   constructor(private readonly customFieldsService: CustomFieldsService) {}
@@ -22,7 +23,7 @@ export class CustomFieldsController {
   @Get()
   @RequirePermission('custom_fields.view')
   @ApiOperation({ summary: 'List custom fields (columns) for this workspace' })
-  @ApiQuery({ name: 'entityType', required: false, enum: ['contact', 'company', 'lead', 'deal'] })
+  @ApiQuery({ name: 'entityType', required: false, enum: ['contact', 'company', 'lead', 'deal', 'task'] })
   @ApiQuery({ name: 'includeInactive', required: false })
   async findAll(@CurrentUser() user: any, @Query() query: any) {
     const data = await this.customFieldsService.findAll(user.tenantId, query);

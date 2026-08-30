@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Loader2, Save, Check, Users as UsersIcon, Building2, SlidersHorizontal,
-  KeyRound, Columns3, UserPlus, Trash2, X, ShieldCheck,
+  KeyRound, Columns3, UserPlus, Trash2, X, ShieldCheck, CreditCard, UsersRound,
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { tenantsApi, usersApi } from '@/lib/api/services';
+import { tenantsApi, usersApi, billingApi, teamsApi } from '@/lib/api/services';
 import { getErrorMessage } from '@/lib/api/errors';
 import { formatDate, getInitials } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth.store';
@@ -17,12 +17,16 @@ import { Field, DetailRow, ErrorBanner } from '@/components/ui/Field';
 import { ApiKeysPanel } from './ApiKeysPanel';
 import { CustomFieldsPanel } from './CustomFieldsPanel';
 import { RolesPanel } from './RolesPanel';
+import { GroupsPanel } from './GroupsPanel';
+import { BillingPanel } from './BillingPanel';
 
 const TABS = [
   { id: 'workspace', label: 'Workspace', icon: Building2, permission: null },
   { id: 'preferences', label: 'Preferences', icon: SlidersHorizontal, permission: 'settings.update' },
+  { id: 'billing', label: 'Billing', icon: CreditCard, permission: 'billing.view' },
   { id: 'fields', label: 'Custom fields', icon: Columns3, permission: 'custom_fields.view' },
   { id: 'team', label: 'Team', icon: UsersIcon, permission: 'users.view' },
+  { id: 'groups', label: 'Groups', icon: UsersRound, permission: 'teams.view' },
   { id: 'roles', label: 'Roles', icon: ShieldCheck, permission: 'roles.view' },
   { id: 'api', label: 'API keys', icon: KeyRound, permission: 'api_keys.view' },
 ] as const;
@@ -32,7 +36,7 @@ type TabId = (typeof TABS)[number]['id'];
 const TIMEZONES = ['Asia/Kolkata', 'Asia/Dubai', 'Asia/Singapore', 'Europe/London', 'America/New_York', 'UTC'];
 const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD'];
 const DATE_FORMATS = ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'];
-const LOCALES = ['en', 'hi', 'ta', 'te'];
+const LOCALES = ['en', 'hi', 'kn'];
 
 export default function SettingsClient() {
   const { can } = usePermissions();
@@ -77,8 +81,10 @@ export default function SettingsClient() {
         <>
           {activeTab === 'workspace' && <WorkspacePanel tenant={tenant} />}
           {activeTab === 'preferences' && <PreferencesPanel tenant={tenant} />}
+          {activeTab === 'billing' && <BillingPanel />}
           {activeTab === 'fields' && <CustomFieldsPanel />}
           {activeTab === 'team' && <TeamPanel />}
+          {activeTab === 'groups' && <GroupsPanel />}
           {activeTab === 'roles' && <RolesPanel />}
           {activeTab === 'api' && <ApiKeysPanel />}
         </>
@@ -186,6 +192,26 @@ function PreferencesPanel({ tenant }: { tenant: any }) {
   const set = (key: keyof typeof values) => (value: string) =>
     setValues((prev) => ({ ...prev, [key]: value }));
 
+  let previewDate = '—';
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: values.timezone, day: '2-digit', month: '2-digit', year: 'numeric',
+    }).formatToParts(new Date());
+    const d = parts.find((p) => p.type === 'day')?.value ?? '';
+    const m = parts.find((p) => p.type === 'month')?.value ?? '';
+    const y = parts.find((p) => p.type === 'year')?.value ?? '';
+    previewDate = values.dateFormat === 'MM/DD/YYYY' ? `${m}/${d}/${y}`
+      : values.dateFormat === 'YYYY-MM-DD' ? `${y}-${m}-${d}`
+      : `${d}/${m}/${y}`;
+  } catch { /* invalid timezone mid-edit — keep placeholder */ }
+
+  let previewAmount = '—';
+  try {
+    previewAmount = new Intl.NumberFormat(values.locale, {
+      style: 'currency', currency: values.currency, maximumFractionDigits: 0,
+    }).format(125000);
+  } catch { /* invalid currency/locale mid-edit — keep placeholder */ }
+
   return (
     <form
       className="max-w-2xl"
@@ -232,9 +258,22 @@ function PreferencesPanel({ tenant }: { tenant: any }) {
           </Field>
 
           <Field label="Email footer" htmlFor="settings-email-footer" className="sm:col-span-2">
-            <textarea id="settings-email-footer" className="input min-h-[80px]" placeholder="Appended to outgoing emails"
+            <textarea id="settings-email-footer" className="input min-h-[80px]" placeholder="e.g. Sent from Acme Inc — support@acme.com"
               value={values.emailFooter} onChange={(e) => set('emailFooter')((e.target as HTMLTextAreaElement).value)} />
           </Field>
+        </div>
+
+        <div className="border-t border-slate-100 bg-surface-1 px-5 py-3">
+          <p className="text-xs font-medium text-slate-500">
+            Preview — <span className="text-slate-700">{previewDate}</span>
+            {' · '}
+            <span className="text-slate-700">{previewAmount}</span>
+            {' · '}
+            <span
+              className="inline-block h-3 w-3 rounded-sm align-middle"
+              style={{ backgroundColor: values.brandColor }}
+            />
+          </p>
         </div>
       </div>
 
@@ -267,6 +306,12 @@ function TeamPanel() {
     queryFn: () => usersApi.list({ limit: 100 }),
   });
 
+  const { data: subscription } = useQuery({
+    queryKey: ['billing', 'subscription'],
+    queryFn: () => billingApi.getSubscription(),
+    enabled: can('billing.view'),
+  });
+
   const removeUser = useMutation({
     mutationFn: (id: string) => usersApi.remove(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
@@ -275,6 +320,8 @@ function TeamPanel() {
 
 
   const users: any[] = (data as any)?.data ?? [];
+  const maxUsers: number | undefined = subscription?.plan?.features?.maxUsers;
+  const atSeatLimit = typeof maxUsers === 'number' && users.length >= maxUsers;
 
   if (isError) {
     return <ErrorBanner message={getErrorMessage(error, 'Could not load team members.')} />;
@@ -285,13 +332,29 @@ function TeamPanel() {
     <ErrorBanner message={actionError} />
     <div className="card">
       <div className="card-header">
-        <h3 className="text-sm font-semibold text-slate-800">Team members</h3>
+        <div>
+          <h3 className="text-sm font-semibold text-slate-800">Team members</h3>
+          {typeof maxUsers === 'number' && (
+            <p className="text-xs text-slate-500">{users.length} of {maxUsers} seats used</p>
+          )}
+        </div>
         {can('users.create') && (
-          <button className="btn-primary btn-sm" id="add-team-member-btn" onClick={() => setIsAdding(true)}>
+          <button
+            className="btn-primary btn-sm"
+            id="add-team-member-btn"
+            onClick={() => setIsAdding(true)}
+            disabled={atSeatLimit}
+            title={atSeatLimit ? 'Seat limit reached — upgrade your plan to add more team members' : undefined}
+          >
             <UserPlus className="h-3.5 w-3.5" /> Add member
           </button>
         )}
       </div>
+      {atSeatLimit && (
+        <div className="border-b border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+          Seat limit reached for your plan. Upgrade in Settings &gt; Billing to add more team members.
+        </div>
+      )}
 
       {isAdding && (
         <AddMemberForm
@@ -363,12 +426,19 @@ function TeamPanel() {
 }
 
 function AddMemberForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', password: '', roleId: '' });
+  const { can } = usePermissions();
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', password: '', roleId: '', teamId: '' });
   const [error, setError] = useState<string | null>(null);
 
   const { data: roles = [] } = useQuery({
     queryKey: ['users', 'roles'],
     queryFn: () => usersApi.roles(),
+  });
+
+  const { data: groups = [] } = useQuery({
+    queryKey: ['teams'],
+    queryFn: () => teamsApi.list(),
+    enabled: can('teams.view'),
   });
 
   // Roles arrive after the first render, so seed the picker once they land —
@@ -382,14 +452,18 @@ function AddMemberForm({ onClose, onCreated }: { onClose: () => void; onCreated:
   const set = (key: keyof typeof form) => (value: string) => setForm((p) => ({ ...p, [key]: value }));
 
   const create = useMutation({
-    mutationFn: () =>
-      usersApi.create({
+    mutationFn: async () => {
+      const user = await usersApi.create({
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
         email: form.email.trim(),
         password: form.password,
         roleId: form.roleId || undefined,
-      }),
+      });
+      // Group membership is a separate call — user creation succeeds even if this fails.
+      if (form.teamId) await teamsApi.addMember(form.teamId, user.id);
+      return user;
+    },
     onSuccess: onCreated,
     onError: (err) => setError(getErrorMessage(err)),
   });
@@ -440,6 +514,17 @@ function AddMemberForm({ onClose, onCreated }: { onClose: () => void; onCreated:
             ))}
           </select>
         </Field>
+        {can('teams.view') && (
+          <Field label="Group" htmlFor="member-team" className="sm:col-span-2" hint="Optional — add them to an existing group, e.g. Sales Team">
+            <select id="member-team" className="input" value={form.teamId}
+              onChange={(e) => set('teamId')((e.target as HTMLSelectElement).value)}>
+              <option value="">No group</option>
+              {(groups as any[]).map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+          </Field>
+        )}
       </div>
 
       <div className="mt-3 flex items-center gap-2">

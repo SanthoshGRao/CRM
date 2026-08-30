@@ -12,9 +12,10 @@ import Link from 'next/link';
 import api from '@/lib/api/client';
 import { Can } from '@/components/ui/Can';
 import { usePermissions } from '@/lib/permissions';
-import { formatCurrency, formatRelativeTime, getInitials } from '@/lib/utils';
+import { formatCurrency, formatRelativeTime, getInitials, getCurrencySymbol } from '@/lib/utils';
 import type { Lead } from '@crm/types';
 import { ConvertLeadDialog } from './ConvertLeadDialog';
+import { ImportDialog } from '@/components/import/ImportDialog';
 
 // ─── API calls ────────────────────────────────────────────────────────────────
 
@@ -90,13 +91,14 @@ const STAGE_FALLBACK_COLOR = '#6366f1';
 /** ₹12,50,000 → ₹12.5L — keeps column headers readable at 290px wide. */
 function compactCurrency(value: number): string {
   const abs = Math.abs(value);
+  const symbol = getCurrencySymbol();
   const shorten = (n: number, suffix: string) =>
-    `₹${(Math.round((n + Number.EPSILON) * 10) / 10).toString()}${suffix}`;
+    `${symbol}${(Math.round((n + Number.EPSILON) * 10) / 10).toString()}${suffix}`;
 
   if (abs >= 1e7) return shorten(value / 1e7, 'Cr');
   if (abs >= 1e5) return shorten(value / 1e5, 'L');
   if (abs >= 1e3) return shorten(value / 1e3, 'K');
-  return `₹${value.toLocaleString('en-IN')}`;
+  return `${symbol}${value.toLocaleString('en-IN')}`;
 }
 
 function KanbanSkeleton() {
@@ -344,6 +346,7 @@ export default function LeadsClient() {
   const { canAll } = usePermissions();
   const canConvert = canAll('leads.update', 'deals.create');
   const [leadToConvert, setLeadToConvert] = useState<any | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [view, setView] = useState<ViewMode>('table');
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -513,10 +516,12 @@ export default function LeadsClient() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn-secondary btn-sm" id="import-leads-btn">
-            <Upload className="h-3.5 w-3.5" />
-            Import
-          </button>
+          <Can permission="leads.create">
+            <button className="btn-secondary btn-sm" id="import-leads-btn" onClick={() => setImportOpen(true)}>
+              <Upload className="h-3.5 w-3.5" />
+              Import
+            </button>
+          </Can>
           <button className="btn-secondary btn-sm" id="export-leads-btn">
             <Download className="h-3.5 w-3.5" />
             Export
@@ -686,7 +691,7 @@ export default function LeadsClient() {
                       <td className="text-slate-600">{lead.source ? SOURCE_LABELS[lead.source] ?? lead.source : '—'}</td>
                       <td className="font-medium text-slate-800">
                         {lead.value != null
-                          ? `₹${Number(lead.value).toLocaleString('en-IN')}`
+                          ? formatCurrency(Number(lead.value))
                           : '—'}
                       </td>
                       <td>
@@ -832,6 +837,10 @@ export default function LeadsClient() {
 
       {leadToConvert && (
         <ConvertLeadDialog lead={leadToConvert} onClose={() => setLeadToConvert(null)} />
+      )}
+
+      {importOpen && (
+        <ImportDialog resource="leads" label="leads" onClose={() => setImportOpen(false)} />
       )}
     </div>
   );

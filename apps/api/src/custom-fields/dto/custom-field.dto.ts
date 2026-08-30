@@ -4,8 +4,8 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional, PartialType, OmitType } from '@nestjs/swagger';
 
-/** CustomFieldValue can only hang off these four entities. */
-export const CUSTOM_FIELD_ENTITIES = ['contact', 'company', 'lead', 'deal'] as const;
+/** CustomFieldValue can only hang off these entities. */
+export const CUSTOM_FIELD_ENTITIES = ['contact', 'company', 'lead', 'deal', 'task'] as const;
 
 export const CUSTOM_FIELD_TYPES = [
   'text', 'long_text', 'number', 'currency', 'percentage', 'date', 'datetime',
@@ -69,7 +69,12 @@ export class CreateCustomFieldDto {
   @Min(0)
   displayOrder?: number;
 
-  @ApiPropertyOptional({ type: [CustomFieldOptionDto], description: 'Required for dropdown / multi_select' })
+  @ApiPropertyOptional({
+    type: [CustomFieldOptionDto],
+    description:
+      'Required for dropdown / multi_select. An array of option OBJECTS, not strings — ' +
+      'e.g. [{ "label": "High priority", "value": "high" }], not ["High priority"].',
+  })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

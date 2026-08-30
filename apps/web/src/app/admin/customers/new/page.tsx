@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Building2 } from 'lucide-react';
-import { adminTenantsApi } from '@/lib/api/admin-client';
+import { adminTenantsApi, adminPlansApi } from '@/lib/api/admin-client';
 import { getErrorMessage } from '@/lib/api/errors';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Field, ErrorBanner } from '@/components/ui/Field';
@@ -14,9 +14,14 @@ export default function NewCustomerPage() {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
 
+  const { data: plans } = useQuery({
+    queryKey: ['admin', 'plans'],
+    queryFn: adminPlansApi.list,
+  });
+
   const [form, setForm] = useState({
     name: '',
-    plan: '',
+    planId: '',
     status: 'active',
     ownerFirstName: '',
     ownerLastName: '',
@@ -31,7 +36,7 @@ export default function NewCustomerPage() {
     mutationFn: () =>
       adminTenantsApi.create({
         name: form.name.trim(),
-        plan: form.plan.trim() || undefined,
+        planId: form.planId || undefined,
         status: form.status,
         ownerFirstName: form.ownerFirstName.trim(),
         ownerLastName: form.ownerLastName.trim(),
@@ -71,13 +76,18 @@ export default function NewCustomerPage() {
           <div className="card-header"><h3 className="text-sm font-semibold text-slate-800">Company</h3></div>
           <div className="card-body grid gap-4 sm:grid-cols-2">
             <Field label="Company name" htmlFor="tenant-name" required className="sm:col-span-2">
-              <input id="tenant-name" className="input" required maxLength={100} placeholder="Acme Corp"
+              <input id="tenant-name" className="input" required maxLength={100}
                 value={form.name} onChange={(e) => set('name')((e.target as HTMLInputElement).value)} />
             </Field>
 
-            <Field label="Plan" htmlFor="tenant-plan" hint="Free-text label, e.g. starter or pro">
-              <input id="tenant-plan" className="input" maxLength={50} placeholder="pro"
-                value={form.plan} onChange={(e) => set('plan')((e.target as HTMLInputElement).value)} />
+            <Field label="Plan" htmlFor="tenant-plan" hint="Starts the workspace on a trial subscription for this plan.">
+              <select id="tenant-plan" className="input" value={form.planId}
+                onChange={(e) => set('planId')((e.target as HTMLSelectElement).value)}>
+                <option value="">No plan</option>
+                {(plans ?? []).map((plan: any) => (
+                  <option key={plan.id} value={plan.id}>{plan.name}</option>
+                ))}
+              </select>
             </Field>
 
             <Field label="Status" htmlFor="tenant-status">
@@ -98,22 +108,22 @@ export default function NewCustomerPage() {
           </div>
           <div className="card-body grid gap-4 sm:grid-cols-2">
             <Field label="First name" htmlFor="owner-first" required>
-              <input id="owner-first" className="input" required maxLength={50} placeholder="Priya"
+              <input id="owner-first" className="input" required maxLength={50}
                 value={form.ownerFirstName} onChange={(e) => set('ownerFirstName')((e.target as HTMLInputElement).value)} />
             </Field>
 
             <Field label="Last name" htmlFor="owner-last" required>
-              <input id="owner-last" className="input" required maxLength={50} placeholder="Sharma"
+              <input id="owner-last" className="input" required maxLength={50}
                 value={form.ownerLastName} onChange={(e) => set('ownerLastName')((e.target as HTMLInputElement).value)} />
             </Field>
 
             <Field label="Email" htmlFor="owner-email" required>
-              <input id="owner-email" type="email" className="input" required placeholder="priya@acme.com"
+              <input id="owner-email" type="email" className="input" required
                 value={form.ownerEmail} onChange={(e) => set('ownerEmail')((e.target as HTMLInputElement).value)} />
             </Field>
 
             <Field label="Temporary password" htmlFor="owner-password" required hint="Minimum 8 characters — share it securely">
-              <input id="owner-password" type="text" className="input" required minLength={8} placeholder="At least 8 characters"
+              <input id="owner-password" type="text" className="input" required minLength={8}
                 value={form.ownerPassword} onChange={(e) => set('ownerPassword')((e.target as HTMLInputElement).value)} />
             </Field>
           </div>

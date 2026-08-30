@@ -10,6 +10,7 @@ import {
   PieChart, Pie, Cell, Legend,
 } from 'recharts';
 import api from '@/lib/api/client';
+import { getCurrencySymbol } from '@/lib/utils';
 import type { DashboardKpis } from '@crm/types';
 
 // ─── API calls ──────────────────────────────────────────────────────────────
@@ -120,12 +121,13 @@ export default function DashboardClient() {
     queryFn: fetchPipeline,
   });
 
+  const symbol = getCurrencySymbol();
   const fmt = (n: number) =>
     n >= 1_00_000
-      ? `₹${(n / 1_00_000).toFixed(1)}L`
+      ? `${symbol}${(n / 1_00_000).toFixed(1)}L`
       : n >= 1_000
-      ? `₹${(n / 1_000).toFixed(0)}K`
-      : `₹${n}`;
+      ? `${symbol}${(n / 1_000).toFixed(0)}K`
+      : `${symbol}${n}`;
 
   return (
     <div className="page-container">

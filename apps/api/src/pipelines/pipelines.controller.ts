@@ -1,6 +1,7 @@
 import { Controller, Get, Param, Query, UseGuards, ParseUUIDPipe } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { SubscriptionGuard } from '../common/billing/guards/subscription.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -8,7 +9,7 @@ import { PipelinesService } from './pipelines.service';
 
 @ApiTags('pipelines')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, SubscriptionGuard, PermissionGuard)
 @Controller('pipelines')
 export class PipelinesController {
   constructor(private readonly pipelinesService: PipelinesService) {}

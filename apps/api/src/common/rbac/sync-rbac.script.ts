@@ -46,7 +46,26 @@ async function main() {
     const tenants = await prisma.tenant.findMany({ select: { id: true, name: true } });
     console.log(`\nSyncing ${tenants.length} workspace(s):`);
 
+    // Renamed roles: old seeded name -> new one. Renaming the existing row in
+    // place (rather than creating a new one) keeps every UserRole pointed at
+    // the same role id, so nobody's assignment silently disappears.
+    const RENAMES: Array<[string, string]> = [['Admin', 'Developer']];
+
     for (const tenant of tenants) {
+      for (const [fromName, toName] of RENAMES) {
+        const hasNewName = await prisma.role.findFirst({
+          where: { tenantId: tenant.id, name: toName },
+          select: { id: true },
+        });
+        if (hasNewName) continue;
+
+        const renamed = await prisma.role.updateMany({
+          where: { tenantId: tenant.id, name: fromName },
+          data: { name: toName },
+        });
+        if (renamed.count > 0) console.log(`  renamed "${fromName}" -> "${toName}" for ${tenant.name}`);
+      }
+
       for (const definition of ROLE_DEFINITIONS) {
         const existing = await prisma.role.findFirst({
           where: { tenantId: tenant.id, name: definition.name },

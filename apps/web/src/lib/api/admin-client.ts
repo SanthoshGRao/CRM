@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { useAdminStore } from '@/stores/admin.store';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
 
 /** Axios instance for the platform admin API — carries the admin token only. */
 export const adminApi = axios.create({
@@ -92,6 +92,49 @@ export const adminTenantsApi = {
   access: async (id: string) => {
     const { data } = await adminApi.post(`/admin/tenants/${id}/access`);
     return data.data;
+  },
+  upsertSubscription: async (id: string, dto: any) => {
+    const { data } = await adminApi.post(`/admin/tenants/${id}/subscription`, dto);
+    return data.data;
+  },
+  cancelSubscription: async (id: string) => {
+    const { data } = await adminApi.post(`/admin/tenants/${id}/subscription/cancel`);
+    return data.data;
+  },
+  setFeature: async (id: string, feature: string, dto: { enabled: boolean; config?: any }) => {
+    const { data } = await adminApi.patch(`/admin/tenants/${id}/features/${feature}`, dto);
+    return data.data;
+  },
+  addDomain: async (id: string, dto: { domain: string; isPrimary?: boolean }) => {
+    const { data } = await adminApi.post(`/admin/tenants/${id}/domains`, dto);
+    return data.data;
+  },
+  updateDomain: async (id: string, domainId: string, dto: { isPrimary?: boolean; verified?: boolean }) => {
+    const { data } = await adminApi.patch(`/admin/tenants/${id}/domains/${domainId}`, dto);
+    return data.data;
+  },
+  removeDomain: async (id: string, domainId: string) => {
+    const { data } = await adminApi.delete(`/admin/tenants/${id}/domains/${domainId}`);
+    return data;
+  },
+};
+
+export const adminPlansApi = {
+  list: async () => {
+    const { data } = await adminApi.get('/admin/plans');
+    return data.data;
+  },
+  create: async (dto: any) => {
+    const { data } = await adminApi.post('/admin/plans', dto);
+    return data.data;
+  },
+  update: async (id: string, dto: any) => {
+    const { data } = await adminApi.patch(`/admin/plans/${id}`, dto);
+    return data.data;
+  },
+  remove: async (id: string) => {
+    const { data } = await adminApi.delete(`/admin/plans/${id}`);
+    return data;
   },
 };
 

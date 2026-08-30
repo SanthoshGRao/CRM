@@ -49,8 +49,42 @@ export interface AuthSession {
   roles: string[];
   permissions: string[];
   dataScope?: string;
+  billing: SubscriptionSummary;
   /** Present only while platform staff are working inside the workspace. */
   impersonation?: { by: string; adminId: string };
+}
+
+export type SubscriptionStatus = 'active' | 'past_due' | 'cancelled' | 'trialing';
+
+export type EntitlementReason =
+  | 'ok'
+  | 'no_subscription'
+  | 'trial_expired'
+  | 'period_expired'
+  | 'past_due'
+  | 'cancelled';
+
+export interface PlanSummary {
+  id: string;
+  name: string;
+  description?: string | null;
+  price: string | number;
+  currency: string;
+  interval: string;
+  features?: Record<string, unknown>;
+  /** Seat ceiling for this plan tier; null means unlimited. */
+  maxUsers?: number | null;
+}
+
+export interface SubscriptionSummary {
+  plan: PlanSummary | null;
+  status: SubscriptionStatus | null;
+  currentPeriodEnd: string | null;
+  isEntitled: boolean;
+  entitlementReason: EntitlementReason;
+  daysLeft: number;
+  /** Seats paid for on the plan. Null when there's no subscription at all. */
+  seats: number | null;
 }
 
 export interface LoginDto {
@@ -80,6 +114,7 @@ export interface Tenant {
   plan?: string;
   createdAt: string;
   updatedAt: string;
+  settings?: Partial<TenantSettings> | null;
 }
 
 export type TenantStatus = 'active' | 'suspended' | 'pending' | 'cancelled';
@@ -93,6 +128,7 @@ export interface TenantSettings {
   currency: string;
   brandColor?: string;
   logoUrl?: string;
+  emailFooter?: string;
 }
 
 export interface TenantFeature {

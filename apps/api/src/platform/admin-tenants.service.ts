@@ -8,7 +8,12 @@ import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RolesService } from '../roles/roles.service';
 import { DEFAULT_ROLE_NAME, OWNER_ROLE_NAME, sortRolesByRank } from '../common/rbac/role-definitions';
-import { CreateTenantDto, UpdateTenantDto, CreateTenantUserDto } from './dto/admin-tenant.dto';
+import { computeEntitlement, daysLeftInTrial } from '../common/billing/entitlement.util';
+import { getMaxUsers } from '../common/billing/plan-limits.util';
+import {
+  CreateTenantDto, UpdateTenantDto, CreateTenantUserDto,
+  UpsertSubscriptionDto, ToggleFeatureDto, CreateDomainDto, UpdateDomainDto,
+} from './dto/admin-tenant.dto';
 
 const LEAD_STAGES = [
   { name: 'New', color: '#94a3b8', probability: 10, displayOrder: 1 },
@@ -89,6 +94,8 @@ export class AdminTenantsService {
       include: {
         settings: true,
         features: true,
+        domains: { orderBy: { createdAt: 'asc' } },
+        subscription: { include: { plan: true } },
         createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
         users: {
           orderBy: { createdAt: 'asc' },
@@ -138,13 +145,20 @@ export class AdminTenantsService {
     const passwordHash = await this.hash(dto.ownerPassword);
     const slug = await this.uniqueSlug(this.slugify(dto.name));
 
+    const plan = dto.planId
+      ? await this.prisma.plan.findUnique({ where: { id: dto.planId } })
+      : null;
+    if (dto.planId && !plan) {
+      throw new NotFoundException('Plan not found');
+    }
+
     const result = await this.prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({
         data: {
           name: dto.name,
           slug,
           status: (dto.status as any) ?? 'active',
-          plan: dto.plan,
+          plan: plan ? plan.name : dto.plan,
           createdById: adminId,
           settings: {
             create: { timezone: 'Asia/Kolkata', locale: 'en', dateFormat: 'DD/MM/YYYY', currency: 'INR' },
@@ -201,6 +215,24 @@ export class AdminTenantsService {
           stages: { createMany: { data: DEAL_STAGES } },
         },
       });
+
+      if (plan) {
+        const trialDays = Number(this.config.get('app.billing.trialDays')) || 7;
+        const start = new Date();
+        const end = new Date(start.getTime() + trialDays * 24 * 60 * 60 * 1000);
+        await tx.subscription.create({
+          data: {
+            tenantId: tenant.id,
+            planId: plan.id,
+            status: 'trialing',
+            // Admin-assigned plans start at full seat capacity — the tenant
+            // only has to pay per-seat once they check out on their own.
+            seats: getMaxUsers(plan.features as any) ?? 999,
+            currentPeriodStart: start,
+            currentPeriodEnd: end,
+          },
+        });
+      }
 
       return { tenant, owner };
     });
@@ -282,7 +314,7 @@ export class AdminTenantsService {
   async createAccessToken(tenantId: string, adminId: string) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      include: { settings: true },
+      include: { settings: true, subscription: { include: { plan: true } } },
     });
     if (!tenant) throw new NotFoundException('Customer company not found');
 
@@ -348,6 +380,11 @@ export class AdminTenantsService {
 
     this.logger.warn(`Admin ${adminId} opened workspace ${tenant.name} (${tenantId})`);
 
+    // Without this the client-side paywall gate defaults to "entitled" for a
+    // session that has no billing block at all, so a workspace an admin opens
+    // looks accessible even when the tenant itself is blocked on subscription.
+    const entitlement = computeEntitlement(tenant.subscription);
+
     return {
       accessToken,
       refreshToken,
@@ -364,9 +401,134 @@ export class AdminTenantsService {
         tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug, status: tenant.status },
         roles: owner.userRoles.map((ur) => ur.role.name),
         permissions: [...permissions],
+        billing: {
+          plan: tenant.subscription
+            ? {
+                id: tenant.subscription.plan.id,
+                name: tenant.subscription.plan.name,
+                price: tenant.subscription.plan.price,
+                currency: tenant.subscription.plan.currency,
+                interval: tenant.subscription.plan.interval,
+              }
+            : null,
+          status: tenant.subscription?.status ?? null,
+          currentPeriodEnd: tenant.subscription?.currentPeriodEnd ?? null,
+          isEntitled: entitlement.entitled,
+          entitlementReason: entitlement.reason,
+          daysLeft: daysLeftInTrial(tenant.subscription),
+          seats: tenant.subscription?.seats ?? null,
+        },
         impersonation: { by: admin ? `${admin.firstName} ${admin.lastName}` : 'Platform admin', adminId },
       },
     };
+  }
+
+  // ─── Subscription ────────────────────────────────────────────────────────
+
+  /** Creates or updates a tenant's subscription — covers first assignment, upgrade/downgrade, and un-cancelling. */
+  async upsertSubscription(tenantId: string, dto: UpsertSubscriptionDto) {
+    await this.ensureExists(tenantId);
+
+    const plan = await this.prisma.plan.findUnique({ where: { id: dto.planId } });
+    if (!plan) throw new NotFoundException('Plan not found');
+
+    const start = dto.currentPeriodStart ? new Date(dto.currentPeriodStart) : new Date();
+    const end = dto.currentPeriodEnd
+      ? new Date(dto.currentPeriodEnd)
+      : new Date(start.getTime() + (plan.interval === 'year' ? 365 : 30) * 24 * 60 * 60 * 1000);
+
+    // Admin reassignment grants full seat capacity on the new plan — the
+    // tenant only pays per-seat when it checks out for itself.
+    const seats = getMaxUsers(plan.features as any) ?? 999;
+
+    const subscription = await this.prisma.subscription.upsert({
+      where: { tenantId },
+      create: {
+        tenantId,
+        planId: dto.planId,
+        status: (dto.status as any) ?? 'trialing',
+        seats,
+        currentPeriodStart: start,
+        currentPeriodEnd: end,
+      },
+      update: {
+        planId: dto.planId,
+        seats,
+        ...(dto.status ? { status: dto.status as any, cancelledAt: dto.status === 'cancelled' ? new Date() : null } : {}),
+        ...(dto.currentPeriodStart ? { currentPeriodStart: start } : {}),
+        ...(dto.currentPeriodEnd ? { currentPeriodEnd: end } : {}),
+      },
+      include: { plan: true },
+    });
+
+    // Keeps the legacy Tenant.plan label in sync — some older UI still reads it directly.
+    await this.prisma.tenant.update({ where: { id: tenantId }, data: { plan: plan.name } });
+
+    return subscription;
+  }
+
+  async cancelSubscription(tenantId: string) {
+    const subscription = await this.prisma.subscription.findUnique({ where: { tenantId } });
+    if (!subscription) throw new NotFoundException('This workspace has no subscription to cancel.');
+
+    return this.prisma.subscription.update({
+      where: { tenantId },
+      data: { status: 'cancelled', cancelledAt: new Date() },
+      include: { plan: true },
+    });
+  }
+
+  // ─── Feature flags ───────────────────────────────────────────────────────
+
+  async setFeature(tenantId: string, feature: string, dto: ToggleFeatureDto) {
+    await this.ensureExists(tenantId);
+
+    return this.prisma.tenantFeature.upsert({
+      where: { tenantId_feature: { tenantId, feature } },
+      create: { tenantId, feature, enabled: dto.enabled, config: dto.config },
+      update: { enabled: dto.enabled, config: dto.config },
+    });
+  }
+
+  // ─── Custom domains ──────────────────────────────────────────────────────
+
+  async addDomain(tenantId: string, dto: CreateDomainDto) {
+    await this.ensureExists(tenantId);
+
+    const domain = dto.domain.toLowerCase();
+    const existing = await this.prisma.tenantDomain.findUnique({ where: { domain } });
+    if (existing) throw new ConflictException('That domain is already assigned to a workspace.');
+
+    return this.prisma.$transaction(async (tx) => {
+      if (dto.isPrimary) {
+        await tx.tenantDomain.updateMany({ where: { tenantId }, data: { isPrimary: false } });
+      }
+      return tx.tenantDomain.create({
+        data: { tenantId, domain, isPrimary: !!dto.isPrimary },
+      });
+    });
+  }
+
+  async updateDomain(tenantId: string, domainId: string, dto: UpdateDomainDto) {
+    const domain = await this.prisma.tenantDomain.findFirst({ where: { id: domainId, tenantId } });
+    if (!domain) throw new NotFoundException('Domain not found on this workspace');
+
+    if (dto.isPrimary) {
+      return this.prisma.$transaction(async (tx) => {
+        await tx.tenantDomain.updateMany({ where: { tenantId }, data: { isPrimary: false } });
+        return tx.tenantDomain.update({ where: { id: domainId }, data: dto });
+      });
+    }
+
+    return this.prisma.tenantDomain.update({ where: { id: domainId }, data: dto });
+  }
+
+  async removeDomain(tenantId: string, domainId: string) {
+    const domain = await this.prisma.tenantDomain.findFirst({ where: { id: domainId, tenantId } });
+    if (!domain) throw new NotFoundException('Domain not found on this workspace');
+
+    await this.prisma.tenantDomain.delete({ where: { id: domainId } });
+    return { id: domainId };
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────

@@ -5,6 +5,8 @@ import { PlatformAuthController } from './platform-auth.controller';
 import { PlatformAuthService } from './platform-auth.service';
 import { AdminTenantsController } from './admin-tenants.controller';
 import { AdminTenantsService } from './admin-tenants.service';
+import { AdminPlansController } from './admin-plans.controller';
+import { AdminPlansService } from './admin-plans.service';
 import { PlatformJwtGuard } from './guards/platform-jwt.guard';
 import { RolesModule } from '../roles/roles.module';
 
@@ -18,8 +20,8 @@ import { RolesModule } from '../roles/roles.module';
       }),
     }),
   ],
-  controllers: [PlatformAuthController, AdminTenantsController],
-  providers: [PlatformAuthService, AdminTenantsService, PlatformJwtGuard],
-  exports: [PlatformAuthService, AdminTenantsService],
+  controllers: [PlatformAuthController, AdminTenantsController, AdminPlansController],
+  providers: [PlatformAuthService, AdminTenantsService, AdminPlansService, PlatformJwtGuard],
+  exports: [PlatformAuthService, AdminTenantsService, AdminPlansService],
 })
 export class PlatformModule {}

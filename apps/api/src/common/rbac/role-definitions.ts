@@ -26,9 +26,11 @@ export const PERMISSION_CATALOGUE: PermissionSpec[] = [
   { resource: 'custom_fields', actions: ['view', 'create', 'update', 'delete'], description: 'Custom fields (columns)' },
   { resource: 'reports', actions: ['view', 'create'], description: 'Reports and dashboards' },
   { resource: 'users', actions: ['view', 'create', 'update', 'delete'], description: 'Team members' },
+  { resource: 'teams', actions: ['view', 'create', 'update', 'delete'], description: 'Groups for organizing team members, e.g. "Sales Team"' },
   { resource: 'roles', actions: ['view', 'create', 'update', 'delete'], description: 'Roles and access' },
   { resource: 'settings', actions: ['view', 'update'], description: 'Workspace settings' },
   { resource: 'api_keys', actions: ['view', 'create', 'delete'], description: 'API keys for integrations' },
+  { resource: 'billing', actions: ['view', 'manage'], description: 'Plan, subscription and payments' },
 ];
 
 /** Every permission string, e.g. "leads.create". */
@@ -59,8 +61,8 @@ export const ROLE_DEFINITIONS: RoleDefinition[] = [
     permissions: ALL_PERMISSIONS,
   },
   {
-    name: 'Admin',
-    description: 'Runs the workspace day to day. Cannot change roles or issue API keys.',
+    name: 'Developer',
+    description: 'Runs the workspace day to day and can issue API keys for integrations. Cannot manage team members or change roles.',
     dataScope: 'COMPANY',
     rank: 2,
     permissions: [
@@ -69,9 +71,12 @@ export const ROLE_DEFINITIONS: RoleDefinition[] = [
       'pipelines.view', 'pipelines.create', 'pipelines.update', 'pipelines.delete',
       'custom_fields.view', 'custom_fields.create', 'custom_fields.update', 'custom_fields.delete',
       'reports.view', 'reports.create',
-      'users.view', 'users.create', 'users.update', 'users.delete',
+      'users.view',
+      'teams.view',
       'roles.view',
       'settings.view', 'settings.update',
+      'api_keys.view', 'api_keys.create', 'api_keys.delete',
+      'billing.view',
     ],
   },
   {
@@ -86,8 +91,10 @@ export const ROLE_DEFINITIONS: RoleDefinition[] = [
       'custom_fields.view',
       'reports.view', 'reports.create',
       'users.view',
+      'teams.view',
       'roles.view',
       'settings.view',
+      'billing.view',
     ],
   },
   {
@@ -101,6 +108,7 @@ export const ROLE_DEFINITIONS: RoleDefinition[] = [
       'pipelines.view',
       'custom_fields.view',
       'settings.view',
+      'billing.view',
     ],
   },
   {
@@ -115,6 +123,7 @@ export const ROLE_DEFINITIONS: RoleDefinition[] = [
       'custom_fields.view',
       'reports.view',
       'settings.view',
+      'billing.view',
     ],
   },
 ];

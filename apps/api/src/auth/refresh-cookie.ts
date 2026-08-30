@@ -33,11 +33,15 @@ export function refreshCookieOptions(
   maxAge: number = REFRESH_COOKIE_MAX_AGE,
 ): RefreshCookieOptions {
   const sameSite = config.get<'lax' | 'strict' | 'none'>('app.cookie.sameSite') ?? 'lax';
+  const secureOverride = config.get<boolean | undefined>('app.cookie.secure');
+  const secureDefault = config.get<string>('app.nodeEnv') === 'production';
 
   return {
     httpOnly: true,
-    // Browsers reject SameSite=None unless the cookie is also Secure.
-    secure: sameSite === 'none' || config.get<string>('app.nodeEnv') === 'production',
+    // Browsers reject SameSite=None unless the cookie is also Secure, so that
+    // case can't be overridden. Otherwise COOKIE_SECURE wins when set,
+    // falling back to NODE_ENV === 'production'.
+    secure: sameSite === 'none' || (secureOverride ?? secureDefault),
     sameSite,
     domain: config.get<string>('app.cookie.domain') || undefined,
     path: REFRESH_COOKIE_PATH,

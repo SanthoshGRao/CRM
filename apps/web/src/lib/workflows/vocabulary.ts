@@ -233,7 +233,6 @@ export interface ActionFieldDef {
   key: string;
   label: string;
   type: ActionFieldType;
-  placeholder?: string;
   hint?: string;
   required?: boolean;
   options?: Option[];
@@ -269,7 +268,7 @@ export const ACTIONS: ActionDef[] = [
         hint: 'Use {{label}} for the record name, or any field like {{status}}.',
       },
       { key: 'assignTo', label: 'Assign to', type: 'user', allowRelative: true, default: 'record_owner' },
-      { key: 'dueInDays', label: 'Due in (days)', type: 'number', placeholder: '1', default: 1 },
+      { key: 'dueInDays', label: 'Due in (days)', type: 'number', default: 1 },
       { key: 'priority', label: 'Priority', type: 'select', options: TASK_PRIORITY, default: 'medium' },
     ],
     summary: (c) => `create a task "${c.title ?? 'Follow up'}"`,
@@ -309,8 +308,8 @@ export const ACTIONS: ActionDef[] = [
     available: true,
     fields: [
       { key: 'userId', label: 'Notify', type: 'user', required: true, allowRelative: true },
-      { key: 'title', label: 'Title', type: 'text', placeholder: 'Lead needs attention' },
-      { key: 'body', label: 'Message', type: 'textarea', placeholder: '{{label}} was just updated.' },
+      { key: 'title', label: 'Title', type: 'text' },
+      { key: 'body', label: 'Message', type: 'textarea' },
     ],
     summary: (c, labels) => `notify ${userLabel(labels ?? {}, c.userId)}`,
   },
@@ -342,7 +341,7 @@ export const ACTIONS: ActionDef[] = [
     hint: 'POSTs the record as JSON to a URL you control. Times out after 5 seconds.',
     available: true,
     fields: [
-      { key: 'url', label: 'URL', type: 'text', required: true, placeholder: 'https://example.com/hooks/crm' },
+      { key: 'url', label: 'URL', type: 'text', required: true },
     ],
     summary: () => 'call a webhook',
   },
@@ -363,10 +362,26 @@ export const USER_TARGETS: Option[] = [
   { value: 'actor', label: 'Whoever triggered it' },
 ];
 
-/** Renders a user target — relative keyword or a real person's name. */
+/**
+ * Team/role targets accepted anywhere a user is picked. Resolved server-side to
+ * whoever currently holds that role — round robin for a single-user action like
+ * "Assign to", the whole group for a broadcast one like "Notify a user".
+ */
+export const ROLE_TARGETS: Option[] = [
+  { value: 'team:all', label: 'All members' },
+  { value: 'role:Owner', label: 'Owner' },
+  { value: 'role:Developer', label: 'Developer' },
+  { value: 'role:Manager', label: 'Manager' },
+  { value: 'role:Sales Rep', label: 'Sales representatives' },
+  { value: 'role:Viewer', label: 'Viewer' },
+];
+
+/** Renders a user target — relative keyword, role/team, or a real person's name. */
 function userLabel(labels: Record<string, string>, target?: string): string {
   if (target === 'record_owner') return 'the record owner';
   if (target === 'actor') return 'whoever triggered it';
+  const role = ROLE_TARGETS.find((r) => r.value === target);
+  if (role) return role.label.toLowerCase();
   return (target && labels[target]) || 'someone';
 }
 
