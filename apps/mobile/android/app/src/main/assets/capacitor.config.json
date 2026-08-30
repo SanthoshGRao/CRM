@@ -1,0 +1,23 @@
+{
+	"appId": "in.envisiontechsol.crm",
+	"appName": "CRM Platform",
+	"server": {
+		"url": "http://147.93.108.218:3002",
+		"cleartext": true
+	},
+	"android": {
+		"allowMixedContent": false
+	},
+	"plugins": {
+		"SplashScreen": {
+			"launchShowDuration": 800,
+			"backgroundColor": "#4f46e5",
+			"androidSplashResourceName": "splash",
+			"showSpinner": false
+		},
+		"StatusBar": {
+			"style": "LIGHT",
+			"backgroundColor": "#4f46e5"
+		}
+	}
+}
