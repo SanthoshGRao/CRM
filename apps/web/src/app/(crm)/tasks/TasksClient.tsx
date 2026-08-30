@@ -151,9 +151,15 @@ export default function TasksClient() {
                         </button>
                       </td>
                       <td>
-                        <span className={clsx('font-medium', done ? 'text-slate-400 line-through' : 'text-slate-900')}>
+                        <Link
+                          href={`/tasks/${task.id}`}
+                          className={clsx(
+                            'font-medium hover:text-brand-600',
+                            done ? 'text-slate-400 line-through' : 'text-slate-900',
+                          )}
+                        >
                           {task.title}
-                        </span>
+                        </Link>
                         {task.description && <p className="text-xs text-slate-500 mt-0.5">{task.description}</p>}
                       </td>
                       <td className="text-slate-600">{relatedLabel ?? '—'}</td>
