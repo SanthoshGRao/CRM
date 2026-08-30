@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Bell, Search, ChevronDown, Settings, LogOut, User as UserIcon } from 'lucide-react';
+import { Bell, Search, ChevronDown, Settings, LogOut, User as UserIcon, Menu } from 'lucide-react';
 import api from '@/lib/api/client';
 import { useAuthStore } from '@/stores/auth.store';
+import { useUIStore } from '@/stores/ui.store';
 
 export function Topbar({ title }: { title?: string }) {
   const router = useRouter();
@@ -16,6 +17,7 @@ export function Topbar({ title }: { title?: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [search, setSearch] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
+  const openMobileSidebar = useUIStore((s) => s.openMobileSidebar);
 
   // Close the user menu on any outside click.
   useEffect(() => {
@@ -48,8 +50,15 @@ export function Topbar({ title }: { title?: string }) {
 
   return (
     <header className="topbar">
-      {/* Left: page title or search */}
+      {/* Left: mobile menu toggle + page title or search */}
       <div className="flex flex-1 items-center gap-4">
+        <button
+          className="rounded-md p-2 text-slate-500 hover:bg-surface-2 lg:hidden"
+          aria-label="Open menu"
+          onClick={openMobileSidebar}
+        >
+          <Menu className="h-5 w-5" />
+        </button>
         {title && <h1 className="text-base font-semibold text-slate-800">{title}</h1>}
         <form onSubmit={handleSearch} className="relative">
           <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
