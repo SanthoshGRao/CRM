@@ -62,7 +62,13 @@ export function Sidebar() {
   const [isAndroid, setIsAndroid] = useState(false);
 
   useEffect(() => {
-    setIsAndroid(/android/i.test(navigator.userAgent));
+    if (!/android/i.test(navigator.userAgent)) return;
+    // The app's own WebView is Android too, so the plain user-agent check
+    // alone can't tell a mobile browser apart from being inside the app
+    // already — where a "download the app" link makes no sense.
+    import('@capacitor/core').then(({ Capacitor }) => {
+      setIsAndroid(!Capacitor.isNativePlatform());
+    });
   }, []);
 
   const sections = NAV_SECTIONS
