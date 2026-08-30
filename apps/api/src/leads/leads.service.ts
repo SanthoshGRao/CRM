@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../common/prisma/prisma.service';
 import { PipelinesService } from '../pipelines/pipelines.service';
 import { WorkflowEngineService } from '../workflows/workflow-engine.service';
+import { PushService } from '../push/push.service';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 import { ConvertLeadDto } from './dto/convert-lead.dto';
@@ -27,6 +28,7 @@ export class LeadsService {
     private readonly prisma: PrismaService,
     private readonly pipelines: PipelinesService,
     private readonly workflows: WorkflowEngineService,
+    private readonly push: PushService,
   ) {}
 
   async findAll(
@@ -193,6 +195,14 @@ export class LeadsService {
       record: lead,
     });
 
+    if (lead.ownerId && lead.ownerId !== userId) {
+      void this.push.sendToUser(lead.ownerId, {
+        title: 'New lead assigned to you',
+        body: lead.title,
+        data: { type: 'lead_assigned', leadId: lead.id },
+      });
+    }
+
     return lead;
   }
 
@@ -248,6 +258,14 @@ export class LeadsService {
       record: lead,
       previous: existing,
     });
+
+    if (lead.ownerId && lead.ownerId !== existing.ownerId && lead.ownerId !== userId) {
+      void this.push.sendToUser(lead.ownerId, {
+        title: 'Lead assigned to you',
+        body: lead.title,
+        data: { type: 'lead_assigned', leadId: lead.id },
+      });
+    }
 
     return lead;
   }

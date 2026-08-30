@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../common/prisma/prisma.service';
 import { PipelinesService } from '../pipelines/pipelines.service';
 import { WorkflowEngineService } from '../workflows/workflow-engine.service';
+import { PushService } from '../push/push.service';
 import { CreateDealDto } from './dto/create-deal.dto';
 import { UpdateDealDto } from './dto/update-deal.dto';
 
@@ -19,6 +20,7 @@ export class DealsService {
     private readonly prisma: PrismaService,
     private readonly pipelines: PipelinesService,
     private readonly workflows: WorkflowEngineService,
+    private readonly push: PushService,
   ) {}
 
   async findAll(
@@ -157,6 +159,14 @@ export class DealsService {
       record: deal,
     });
 
+    if (deal.ownerId && deal.ownerId !== userId) {
+      void this.push.sendToUser(deal.ownerId, {
+        title: 'New deal assigned to you',
+        body: deal.name,
+        data: { type: 'deal_assigned', dealId: deal.id },
+      });
+    }
+
     return deal;
   }
 
@@ -220,6 +230,14 @@ export class DealsService {
       record: deal,
       previous: existing,
     });
+
+    if (deal.ownerId && deal.ownerId !== existing.ownerId && deal.ownerId !== userId) {
+      void this.push.sendToUser(deal.ownerId, {
+        title: 'Deal assigned to you',
+        body: deal.name,
+        data: { type: 'deal_assigned', dealId: deal.id },
+      });
+    }
 
     return deal;
   }
