@@ -30,3 +30,6 @@ Thumbs.db
 
 # Prisma
 prisma/migrations/
+
+# Android app build served for download — large binary, not source
+apps/web/app-downloads/*.apk

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Loader2, Save, Check, Users as UsersIcon, Building2, SlidersHorizontal,
-  KeyRound, Columns3, UserPlus, Trash2, X, ShieldCheck, CreditCard, UsersRound,
+  KeyRound, Columns3, UserPlus, Trash2, X, ShieldCheck, CreditCard, UsersRound, Smartphone,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { tenantsApi, usersApi, billingApi, teamsApi } from '@/lib/api/services';
@@ -19,6 +19,7 @@ import { CustomFieldsPanel } from './CustomFieldsPanel';
 import { RolesPanel } from './RolesPanel';
 import { GroupsPanel } from './GroupsPanel';
 import { BillingPanel } from './BillingPanel';
+import { MobileAppPanel } from './MobileAppPanel';
 
 const TABS = [
   { id: 'workspace', label: 'Workspace', icon: Building2, permission: null },
@@ -29,6 +30,7 @@ const TABS = [
   { id: 'groups', label: 'Groups', icon: UsersRound, permission: 'teams.view' },
   { id: 'roles', label: 'Roles', icon: ShieldCheck, permission: 'roles.view' },
   { id: 'api', label: 'API keys', icon: KeyRound, permission: 'api_keys.view' },
+  { id: 'app', label: 'Mobile app', icon: Smartphone, permission: null },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -87,6 +89,7 @@ export default function SettingsClient() {
           {activeTab === 'groups' && <GroupsPanel />}
           {activeTab === 'roles' && <RolesPanel />}
           {activeTab === 'api' && <ApiKeysPanel />}
+          {activeTab === 'app' && <MobileAppPanel />}
         </>
       )}
     </div>
