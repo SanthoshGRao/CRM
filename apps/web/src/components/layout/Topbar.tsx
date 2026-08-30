@@ -7,6 +7,7 @@ import { Bell, Search, ChevronDown, Settings, LogOut, User as UserIcon, Menu } f
 import api from '@/lib/api/client';
 import { useAuthStore } from '@/stores/auth.store';
 import { useUIStore } from '@/stores/ui.store';
+import { usePushStore } from '@/stores/push.store';
 
 export function Topbar({ title }: { title?: string }) {
   const router = useRouter();
@@ -18,6 +19,7 @@ export function Topbar({ title }: { title?: string }) {
   const [search, setSearch] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
   const openMobileSidebar = useUIStore((s) => s.openMobileSidebar);
+  const deviceToken = usePushStore((s) => s.deviceToken);
 
   // Close the user menu on any outside click.
   useEffect(() => {
@@ -33,6 +35,11 @@ export function Topbar({ title }: { title?: string }) {
     : 'U';
 
   async function handleLogout() {
+    if (deviceToken) {
+      api.delete(`/push-tokens/${deviceToken}`).catch(() => {
+        // Best-effort — a stale token just gets reassigned on the next login.
+      });
+    }
     try {
       await api.post('/auth/logout');
     } catch {

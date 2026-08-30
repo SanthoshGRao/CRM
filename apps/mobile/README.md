@@ -18,14 +18,29 @@ The only native surface is the app icon, splash screen, status bar color, and
   project. The Firebase Gradle plugin is wired to apply *only if*
   `android/app/google-services.json` exists, so the app builds fine without
   it — push just won't work until that file is added (see below).
+- The full push pipeline — token registration, storage, task-assignment
+  alerts, and the daily due/digest job — is built end to end. It just needs
+  a Firebase project's credentials on both sides to actually send anything.
 
-## What's NOT done yet (needs a decision, not just a build)
+## Push notifications — code is done, needs your Firebase project
 
-- **The app doesn't send or receive any pushes yet.** Getting a device token
-  and having the backend actually notify on "task due soon" / send a daily
-  digest is a separate, bigger piece of work (a scheduler + a backend
-  endpoint to store device tokens + Firebase Admin SDK to dispatch) that
-  hasn't been started. This app is ready to receive that once it's built.
+The full pipeline is built: the web app registers for a device token and
+sends it to the backend when running inside this app, the backend stores it,
+and a daily job (8am server time) pushes "tasks due today" reminders and a
+digest of open leads/deals/tasks to whoever has open items. A task getting
+assigned to someone also pushes them immediately.
+
+None of it can fire until there's a real Firebase project behind it — two
+separate credentials are needed, from the same project:
+
+1. **Client side** (already documented below under "Enabling push
+   notifications"): `google-services.json` in `android/app/`.
+2. **Server side**: Firebase console → Project settings → Service accounts →
+   Generate new private key. Paste the downloaded JSON as one line into
+   `FIREBASE_SERVICE_ACCOUNT` in `apps/api/.env`, then restart `crm-api`.
+   Until this is set, the API logs a warning on boot and every push call is a
+   silent no-op — nothing breaks, notifications just don't send.
+
 - **HTTPS.** `capacitor.config.ts` currently points at
   `http://147.93.108.218:3002` — plain HTTP on a bare IP, with
   `usesCleartextTraffic="true"` set so Android allows it at all. That's fine
@@ -64,11 +79,11 @@ pnpm --filter @crm/mobile sync
 3. Download the generated `google-services.json` and place it at
    `apps/mobile/android/app/google-services.json` (gitignored — never commit
    it, it holds real project credentials).
-4. Rebuild. The Firebase/FCM plugin picks it up automatically.
-5. The client-side registration code (asking for notification permission and
-   sending the device token somewhere) still needs to be written, along with
-   the backend to receive tokens and actually send messages — see "What's
-   NOT done yet" above.
+4. Rebuild. The Firebase/FCM plugin picks it up automatically, and the app
+   will ask for notification permission and register a token on next login —
+   no further app code needed.
+5. Generate the *separate* service-account key for the API side and set
+   `FIREBASE_SERVICE_ACCOUNT` — see "Push notifications" above.
 
 ## Replacing the placeholder icon/splash
 

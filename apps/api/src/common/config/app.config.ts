@@ -62,6 +62,13 @@ export const appConfig = registerAs('app', () => ({
     from: process.env.EMAIL_FROM || 'CRM Platform <noreply@crm.local>',
   },
 
+  firebase: {
+    // The full service account JSON, as a single-line string (Project settings
+    // → Service accounts → Generate new private key, in the Firebase console).
+    // Push notifications are skipped, not an error, while this is unset.
+    serviceAccount: process.env.FIREBASE_SERVICE_ACCOUNT,
+  },
+
   storage: {
     driver: process.env.STORAGE_DRIVER || 'local',
     localPath: process.env.LOCAL_STORAGE_PATH || './uploads',

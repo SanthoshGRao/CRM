@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { appConfig } from './common/config/app.config';
@@ -27,6 +28,7 @@ import { ImportModule } from './import/import.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { AuditModule } from './audit/audit.module';
 import { HealthModule } from './health/health.module';
+import { PushModule } from './push/push.module';
 
 @Module({
   imports: [
@@ -36,6 +38,8 @@ import { HealthModule } from './health/health.module';
       load: [appConfig],
       envFilePath: ['.env.local', '.env'],
     }),
+
+    ScheduleModule.forRoot(),
 
     // ── Rate Limiting ─────────────────────────────────────────
     ThrottlerModule.forRoot([
@@ -83,6 +87,7 @@ import { HealthModule } from './health/health.module';
     DataModule,
     ImportModule,
     DashboardModule,
+    PushModule,
   ],
   providers: [
     {

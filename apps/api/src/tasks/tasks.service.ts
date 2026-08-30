@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { WorkflowEngineService } from '../workflows/workflow-engine.service';
+import { PushService } from '../push/push.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 
@@ -16,6 +17,7 @@ export class TasksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly workflows: WorkflowEngineService,
+    private readonly push: PushService,
   ) {}
 
   async findAll(
@@ -126,6 +128,14 @@ export class TasksService {
       record: task,
     });
 
+    if (task.assignedToId && task.assignedToId !== userId) {
+      void this.push.sendToUser(task.assignedToId, {
+        title: 'New task assigned to you',
+        body: task.title,
+        data: { type: 'task_assigned', taskId: task.id },
+      });
+    }
+
     return task;
   }
 
@@ -162,6 +172,18 @@ export class TasksService {
       record: task,
       previous: existing,
     });
+
+    if (
+      task.assignedToId &&
+      task.assignedToId !== existing.assignedToId &&
+      task.assignedToId !== userId
+    ) {
+      void this.push.sendToUser(task.assignedToId, {
+        title: 'Task assigned to you',
+        body: task.title,
+        data: { type: 'task_assigned', taskId: task.id },
+      });
+    }
 
     return task;
   }
