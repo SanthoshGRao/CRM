@@ -28,6 +28,19 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Android renders the status-bar notification icon as a white-only
+             silhouette regardless of the source image's colors, so it needs
+             its own simple glyph — the full-color launcher icon would just
+             show up as a solid box. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notify"
+        />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_color"
+        />
     </application>
 
     <!-- Permissions -->

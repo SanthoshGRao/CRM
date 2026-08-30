@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches brand-600 used across the web app and the splash/status bar config. -->
+    <color name="notification_color">#4f46e5</color>
+</resources>
