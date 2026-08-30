@@ -98,6 +98,16 @@
     @apply flex items-center justify-between;
   }
 
+  /* ── Settings page nav ────────────────────────────────────── */
+  .settings-nav-item {
+    @apply flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium
+           text-slate-600 transition-colors hover:bg-surface-2 hover:text-slate-900;
+  }
+
+  .settings-nav-item-active {
+    @apply bg-brand-50 text-brand-600 hover:bg-brand-50 hover:text-brand-600;
+  }
+
   /* ── Cards ────────────────────────────────────────────────── */
   .card {
     @apply rounded-lg border bg-white shadow-sm;

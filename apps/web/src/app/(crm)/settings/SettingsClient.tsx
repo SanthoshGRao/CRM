@@ -13,7 +13,7 @@ import { formatDate, getInitials } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth.store';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { usePermissions } from '@/lib/permissions';
-import { Field, DetailRow, ErrorBanner } from '@/components/ui/Field';
+import { Field, ErrorBanner } from '@/components/ui/Field';
 import { ApiKeysPanel } from './ApiKeysPanel';
 import { CustomFieldsPanel } from './CustomFieldsPanel';
 import { RolesPanel } from './RolesPanel';
@@ -38,6 +38,16 @@ const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD'];
 const DATE_FORMATS = ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'];
 const LOCALES = ['en', 'hi', 'kn'];
 
+/** Label-above-value row, used only in Settings — other pages' detail cards stay side-by-side (DetailRow) since they're denser. */
+function StackedRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="py-3">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="mt-0.5 text-sm text-slate-800">{children ?? '—'}</p>
+    </div>
+  );
+}
+
 export default function SettingsClient() {
   const { can } = usePermissions();
   const [tab, setTab] = useState<TabId>('workspace');
@@ -55,40 +65,39 @@ export default function SettingsClient() {
     <div className="page-container">
       <PageHeader title="Settings" subtitle={session?.tenant?.name ?? 'Workspace configuration'} />
 
-      <div className="flex gap-1 border-b border-slate-200">
-        {visibleTabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={clsx(
-              'flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors',
-              activeTab === t.id
-                ? 'border-brand-600 text-brand-600'
-                : 'border-transparent text-slate-500 hover:text-slate-800',
-            )}
-          >
-            <t.icon className="h-4 w-4" />
-            {t.label}
-          </button>
-        ))}
+      <div className="flex gap-8">
+        <nav className="flex w-52 flex-shrink-0 flex-col gap-0.5">
+          {visibleTabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={clsx('settings-nav-item', activeTab === t.id && 'settings-nav-item-active')}
+            >
+              <t.icon className="h-4 w-4 flex-shrink-0" />
+              {t.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="min-w-0 flex-1">
+          {isError && <ErrorBanner message={getErrorMessage(error, 'Could not load workspace settings.')} />}
+
+          {isLoading ? (
+            <div className="skeleton h-64 max-w-2xl" />
+          ) : (
+            <>
+              {activeTab === 'workspace' && <WorkspacePanel tenant={tenant} />}
+              {activeTab === 'preferences' && <PreferencesPanel tenant={tenant} />}
+              {activeTab === 'billing' && <BillingPanel />}
+              {activeTab === 'fields' && <CustomFieldsPanel />}
+              {activeTab === 'team' && <TeamPanel />}
+              {activeTab === 'groups' && <GroupsPanel />}
+              {activeTab === 'roles' && <RolesPanel />}
+              {activeTab === 'api' && <ApiKeysPanel />}
+            </>
+          )}
+        </div>
       </div>
-
-      {isError && <ErrorBanner message={getErrorMessage(error, 'Could not load workspace settings.')} />}
-
-      {isLoading ? (
-        <div className="skeleton h-64 max-w-2xl" />
-      ) : (
-        <>
-          {activeTab === 'workspace' && <WorkspacePanel tenant={tenant} />}
-          {activeTab === 'preferences' && <PreferencesPanel tenant={tenant} />}
-          {activeTab === 'billing' && <BillingPanel />}
-          {activeTab === 'fields' && <CustomFieldsPanel />}
-          {activeTab === 'team' && <TeamPanel />}
-          {activeTab === 'groups' && <GroupsPanel />}
-          {activeTab === 'roles' && <RolesPanel />}
-          {activeTab === 'api' && <ApiKeysPanel />}
-        </>
-      )}
     </div>
   );
 }
@@ -102,28 +111,28 @@ function WorkspacePanel({ tenant }: { tenant: any }) {
       <div className="card">
         <div className="card-header"><h3 className="text-sm font-semibold text-slate-800">Workspace</h3></div>
         <div className="card-body divide-y divide-slate-100">
-          <DetailRow label="Name">{tenant?.name ?? '—'}</DetailRow>
-          <DetailRow label="Slug">{tenant?.slug ?? '—'}</DetailRow>
-          <DetailRow label="Status">
+          <StackedRow label="Name">{tenant?.name ?? '—'}</StackedRow>
+          <StackedRow label="Slug">{tenant?.slug ?? '—'}</StackedRow>
+          <StackedRow label="Status">
             <span className={clsx('badge', tenant?.status === 'active' ? 'badge-green' : 'badge-gray')}>
               {tenant?.status ?? 'unknown'}
             </span>
-          </DetailRow>
-          <DetailRow label="Created">{tenant?.createdAt ? formatDate(tenant.createdAt) : '—'}</DetailRow>
+          </StackedRow>
+          <StackedRow label="Created">{tenant?.createdAt ? formatDate(tenant.createdAt) : '—'}</StackedRow>
         </div>
       </div>
 
       <div className="card">
         <div className="card-header"><h3 className="text-sm font-semibold text-slate-800">Your account</h3></div>
         <div className="card-body divide-y divide-slate-100">
-          <DetailRow label="Name">
+          <StackedRow label="Name">
             {session?.user ? `${session.user.firstName} ${session.user.lastName}` : '—'}
-          </DetailRow>
-          <DetailRow label="Email">{session?.user?.email ?? '—'}</DetailRow>
-          <DetailRow label="Roles">
+          </StackedRow>
+          <StackedRow label="Email">{session?.user?.email ?? '—'}</StackedRow>
+          <StackedRow label="Roles">
             {session?.roles?.length ? session.roles.join(', ') : '—'}
-          </DetailRow>
-          <DetailRow label="Permissions">{session?.permissions?.length ?? 0} granted</DetailRow>
+          </StackedRow>
+          <StackedRow label="Permissions">{session?.permissions?.length ?? 0} granted</StackedRow>
         </div>
       </div>
 

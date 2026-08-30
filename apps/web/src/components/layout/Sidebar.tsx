@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Users, Building2, TrendingUp, Handshake,
   CheckSquare, Calendar, MessageSquare, BarChart3, Zap, Settings, X, Download,
+  CreditCard, ShieldCheck,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { usePermissions } from '@/lib/permissions';
@@ -124,34 +125,46 @@ export function Sidebar() {
         </nav>
 
         {/* Bottom: download app + plan + role badge + settings */}
-        <div className="border-t border-slate-700 p-3">
+        <div className="space-y-1 border-t border-slate-700 p-3">
           {isAndroid && (
             <a href="/api/download/android" className="nav-item">
               <Download className="h-4 w-4 flex-shrink-0" />
               <span>Download app</span>
             </a>
           )}
-          {billing?.plan && (
-            <div className="mb-2 px-3">
-              <p className="text-[10px] uppercase tracking-widest text-slate-600">Plan</p>
-              <p className="mt-0.5 text-xs font-medium text-slate-300">
-                {billing.plan.name}
-                {billing.status && <span className="text-slate-500"> · {STATUS_LABEL[billing.status] ?? billing.status}</span>}
-              </p>
-              {billing.status === 'trialing' && (
-                <p className="mt-0.5 text-[10px] text-slate-500">{billing.daysLeft} day{billing.daysLeft === 1 ? '' : 's'} left in trial</p>
+
+          {(billing?.plan || roles.length > 0) && (
+            <div className="my-2 space-y-2.5 rounded-md bg-white/5 px-3 py-2.5">
+              {billing?.plan && (
+                <div className="flex items-center gap-2.5">
+                  <CreditCard className="h-4 w-4 flex-shrink-0 text-slate-500" />
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium text-slate-300">
+                      {billing.plan.name}
+                      {billing.status && (
+                        <span className="text-slate-500"> · {STATUS_LABEL[billing.status] ?? billing.status}</span>
+                      )}
+                    </p>
+                    {billing.status === 'trialing' && (
+                      <p className="text-[10px] text-slate-500">
+                        {billing.daysLeft} day{billing.daysLeft === 1 ? '' : 's'} left in trial
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+              {roles.length > 0 && (
+                <div className="flex items-center gap-2.5">
+                  <ShieldCheck className="h-4 w-4 flex-shrink-0 text-slate-500" />
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium text-slate-300">{roles.join(', ')}</p>
+                    {isOwnScoped && <p className="text-[10px] text-slate-500">Own records only</p>}
+                  </div>
+                </div>
               )}
             </div>
           )}
-          {roles.length > 0 && (
-            <div className="mb-2 px-3">
-              <p className="text-[10px] uppercase tracking-widest text-slate-600">Your role</p>
-              <p className="mt-0.5 text-xs font-medium text-slate-300">{roles.join(', ')}</p>
-              {isOwnScoped && (
-                <p className="mt-0.5 text-[10px] text-slate-500">Showing only records you own</p>
-              )}
-            </div>
-          )}
+
           {can('settings.view') && (
             <Link href="/settings" className="nav-item" onClick={closeMobileSidebar}>
               <Settings className="h-4 w-4 flex-shrink-0" />
