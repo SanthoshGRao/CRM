@@ -1,10 +1,11 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Users, Building2, TrendingUp, Handshake,
-  CheckSquare, Calendar, MessageSquare, BarChart3, Zap, Settings, X,
+  CheckSquare, Calendar, MessageSquare, BarChart3, Zap, Settings, X, Download,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { usePermissions } from '@/lib/permissions';
@@ -58,6 +59,11 @@ export function Sidebar() {
   const billing = useAuthStore((s) => s.session?.billing);
   const mobileOpen = useUIStore((s) => s.mobileSidebarOpen);
   const closeMobileSidebar = useUIStore((s) => s.closeMobileSidebar);
+  const [isAndroid, setIsAndroid] = useState(false);
+
+  useEffect(() => {
+    setIsAndroid(/android/i.test(navigator.userAgent));
+  }, []);
 
   const sections = NAV_SECTIONS
     .map((section) => ({
@@ -111,8 +117,14 @@ export function Sidebar() {
           ))}
         </nav>
 
-        {/* Bottom: plan + role badge + settings */}
+        {/* Bottom: download app + plan + role badge + settings */}
         <div className="border-t border-slate-700 p-3">
+          {isAndroid && (
+            <a href="/api/download/android" className="nav-item">
+              <Download className="h-4 w-4 flex-shrink-0" />
+              <span>Download app</span>
+            </a>
+          )}
           {billing?.plan && (
             <div className="mb-2 px-3">
               <p className="text-[10px] uppercase tracking-widest text-slate-600">Plan</p>
