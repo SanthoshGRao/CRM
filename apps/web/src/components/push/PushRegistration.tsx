@@ -6,6 +6,14 @@ import { useAuthStore } from '@/stores/auth.store';
 import { usePushStore } from '@/stores/push.store';
 import api from '@/lib/api/client';
 
+// The native push-notifications plugin calls into Firebase on Android, which
+// crashes the app (uncaught native exception, not something a JS try/catch
+// can stop) until a real Firebase project's google-services.json is built
+// into the app AND FIREBASE_SERVICE_ACCOUNT is set on the API. Keep this off
+// until both are done — see apps/mobile/README.md — then flip it on and
+// redeploy; no app rebuild needed since this is just a remote-loaded flag.
+const PUSH_ENABLED = process.env.NEXT_PUBLIC_PUSH_ENABLED === 'true';
+
 /**
  * No-ops outside the Android app shell (Capacitor.isNativePlatform() is only
  * true inside the WebView the native app loads) and in a plain browser tab.
@@ -19,7 +27,7 @@ export function PushRegistration() {
   const started = useRef(false);
 
   useEffect(() => {
-    if (status !== 'authenticated' || started.current) return;
+    if (!PUSH_ENABLED || status !== 'authenticated' || started.current) return;
     started.current = true;
 
     (async () => {
