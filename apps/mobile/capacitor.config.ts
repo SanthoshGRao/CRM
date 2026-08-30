@@ -26,6 +26,10 @@ const config: CapacitorConfig = {
       // Light (white) icons read correctly against the dark indigo brand bar.
       style: 'LIGHT',
       backgroundColor: '#4f46e5',
+      // Reserve space for the status bar instead of drawing the WebView
+      // under it — the default (true) overlaps the app header with the
+      // phone's clock/battery icons.
+      overlaysWebView: false,
     },
   },
 };
