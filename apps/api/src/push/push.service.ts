@@ -65,7 +65,13 @@ export class PushService implements OnModuleInit {
         if (!r.success && DEAD_TOKEN_CODES.has(r.error?.code ?? '')) {
           deadTokens.push(tokens[i].token);
         }
+        if (!r.success) {
+          this.logger.warn(`FCM rejected token for user ${userId}: ${r.error?.code} — ${r.error?.message}`);
+        }
       });
+      this.logger.log(
+        `Push to user ${userId}: ${response.successCount}/${tokens.length} delivered to FCM ("${message.title}")`,
+      );
       if (deadTokens.length > 0) {
         await this.prisma.pushToken.deleteMany({ where: { token: { in: deadTokens } } });
       }
