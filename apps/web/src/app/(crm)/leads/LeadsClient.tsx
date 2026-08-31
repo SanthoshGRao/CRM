@@ -2,18 +2,25 @@
 
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import {
-  Plus, Search, Filter, LayoutGrid, List, Download, Upload,
+  Plus, Search, LayoutGrid, List, Download, Upload,
   ChevronUp, ChevronDown, MoreHorizontal, ArrowUpDown,
   Building2, User, ChevronsUpDown, Inbox, ArrowRightLeft,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import Link from 'next/link';
 import api from '@/lib/api/client';
+import { leadsApi } from '@/lib/api/services';
 import { Can } from '@/components/ui/Can';
 import { usePermissions } from '@/lib/permissions';
-import { formatCurrency, formatRelativeTime, getInitials, getCurrencySymbol } from '@/lib/utils';
-import type { Lead } from '@crm/types';
+import { formatCurrency, formatRelativeTime, getInitials, getCurrencySymbol, rowNavigate, formatDate } from '@/lib/utils';
+import { FilterBuilder } from '@/components/views/FilterBuilder';
+import { ColumnPicker } from '@/components/views/ColumnPicker';
+import { SavedViewsBar } from '@/components/views/SavedViewsBar';
+import { BulkActionBar } from '@/components/views/BulkActionBar';
+import { fieldsFor, defaultColumns, type EntityFieldDef } from '@/lib/views/entityFields';
+import type { Lead, FilterCondition, SavedView } from '@crm/types';
 import { ConvertLeadDialog } from './ConvertLeadDialog';
 import { ImportDialog } from '@/components/import/ImportDialog';
 
@@ -52,6 +59,49 @@ const SOURCE_LABELS: Record<string, string> = {
   website: 'Website', referral: 'Referral', cold_call: 'Cold Call',
   email: 'Email', social: 'Social', advertisement: 'Ad', event: 'Event', other: 'Other',
 };
+
+const STATUS_OPTIONS = [
+  { value: 'new', label: 'New' },
+  { value: 'working', label: 'Working' },
+  { value: 'qualified', label: 'Qualified' },
+  { value: 'unqualified', label: 'Unqualified' },
+  { value: 'lost', label: 'Lost' },
+];
+
+const LEAD_FIELDS = fieldsFor('lead');
+const LEAD_SORTABLE_TYPES = new Set(['string', 'number', 'date', 'select']);
+
+function leadFieldOf(key: string): EntityFieldDef {
+  return LEAD_FIELDS.find((f) => f.key === key) ?? LEAD_FIELDS[0];
+}
+
+function LeadCell({ lead, columnKey }: { lead: any; columnKey: string }) {
+  switch (columnKey) {
+    case 'contactId':
+      return <span className="text-slate-600">{lead.contact ? `${lead.contact.firstName} ${lead.contact.lastName}` : '—'}</span>;
+    case 'companyId':
+      return <span className="text-slate-600">{lead.company?.name ?? '—'}</span>;
+    case 'status':
+      return <StatusBadge status={lead.status} />;
+    case 'source':
+      return <span className="text-slate-600">{lead.source ? SOURCE_LABELS[lead.source] ?? lead.source : '—'}</span>;
+    case 'value':
+      return <span className="font-medium text-slate-800">{lead.value != null ? formatCurrency(Number(lead.value)) : '—'}</span>;
+    case 'ownerId':
+      return lead.owner ? (
+        <div className="flex items-center gap-2">
+          <div className="avatar-sm text-[10px]">{`${lead.owner.firstName[0]}${lead.owner.lastName[0]}`.toUpperCase()}</div>
+          <span className="text-slate-600">{lead.owner.firstName}</span>
+        </div>
+      ) : <span className="text-slate-400">Unassigned</span>;
+    case 'expectedCloseDate':
+      return <span className="text-slate-500">{lead.expectedCloseDate ? formatDate(lead.expectedCloseDate) : '—'}</span>;
+    case 'createdAt':
+      return <span className="text-slate-500">{new Date(lead.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>;
+    default:
+      return null;
+  }
+}
 
 // ─── Table skeleton ───────────────────────────────────────────────────────────
 
@@ -142,11 +192,14 @@ function KanbanCard({
   onMove: (leadId: string, stageId: string) => void;
   onConvert: (lead: any) => void;
 }) {
+  const router = useRouter();
+
   return (
     <article
       draggable
       onDragStart={(e) => onDragStart(e, lead.id)}
       onDragEnd={onDragEnd}
+      onClick={rowNavigate(() => router.push(`/leads/${lead.id}`))}
       className={clsx(
         'group relative cursor-grab rounded-lg border border-slate-200 bg-white p-3 pl-4 shadow-sm',
         'transition-all duration-150 hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md',
@@ -342,6 +395,7 @@ function KanbanColumn({
 type ViewMode = 'table' | 'kanban';
 
 export default function LeadsClient() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const { canAll } = usePermissions();
   const canConvert = canAll('leads.update', 'deals.create');
@@ -353,12 +407,38 @@ export default function LeadsClient() {
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
+  const [filters, setFilters] = useState<FilterCondition[]>([]);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(defaultColumns('lead'));
+  const [activeView, setActiveView] = useState<SavedView | null>(null);
+
+  const filtersParam = filters.length > 0 ? JSON.stringify(filters) : undefined;
 
   const { data, isLoading } = useQuery({
-    queryKey: ['leads', { search, sortBy, sortOrder, page }],
-    queryFn: () => fetchLeads({ search, sortBy, sortOrder, page, limit: 25 }),
+    queryKey: ['leads', { search, sortBy, sortOrder, page, filtersParam }],
+    queryFn: () => fetchLeads({ search, filters: filtersParam, sortBy, sortOrder, page, limit: 25 }),
     placeholderData: (prev) => prev,
   });
+
+  function applySavedView(savedView: SavedView | null) {
+    setActiveView(savedView);
+    setPage(1);
+    if (!savedView) {
+      setFilters([]);
+      setVisibleColumns(defaultColumns('lead'));
+      setSortBy('createdAt');
+      setSortOrder('desc');
+      return;
+    }
+    setFilters(savedView.filters ?? []);
+    setVisibleColumns(savedView.columns?.length ? savedView.columns : defaultColumns('lead'));
+    if (savedView.sortBy) setSortBy(savedView.sortBy);
+    if (savedView.sortOrder === 'asc' || savedView.sortOrder === 'desc') setSortOrder(savedView.sortOrder);
+  }
+
+  function afterBulkAction() {
+    setSelectedIds(new Set());
+    queryClient.invalidateQueries({ queryKey: ['leads'] });
+  }
 
   const leads: Lead[] = data?.data ?? [];
   const pagination = data?.pagination;
@@ -535,6 +615,14 @@ export default function LeadsClient() {
 
       {/* Toolbar */}
       <div className="card">
+        <SavedViewsBar
+          entityType="lead"
+          entityLabel="leads"
+          activeView={activeView}
+          current={{ filters, columns: visibleColumns, sortBy, sortOrder }}
+          onSelect={applySavedView}
+        />
+
         <div className="flex flex-wrap items-center gap-3 p-4">
           {/* Search */}
           <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -550,10 +638,8 @@ export default function LeadsClient() {
           </div>
 
           {/* Filter */}
-          <button className="btn-secondary btn-sm" id="leads-filter-btn">
-            <Filter className="h-3.5 w-3.5" />
-            Filters
-          </button>
+          <FilterBuilder entityType="lead" value={filters} onChange={(f) => { setFilters(f); setPage(1); }} />
+          {view === 'table' && <ColumnPicker entityType="lead" value={visibleColumns} onChange={setVisibleColumns} />}
 
           {/* View toggle */}
           <div className="ml-auto flex gap-1 rounded-lg bg-surface-2 p-1">
@@ -581,20 +667,20 @@ export default function LeadsClient() {
 
         {/* Bulk action bar */}
         {selectedIds.size > 0 && (
-          <div className="flex items-center gap-3 border-t bg-brand-50 px-4 py-2.5">
-            <span className="text-sm font-medium text-brand-700">
-              {selectedIds.size} selected
-            </span>
-            <button className="btn-secondary btn-sm text-xs">Assign Owner</button>
-            <button className="btn-secondary btn-sm text-xs">Update Status</button>
-            <button className="btn-danger btn-sm text-xs">Delete</button>
-            <button
-              className="ml-auto text-xs text-slate-500 hover:text-slate-700"
-              onClick={() => setSelectedIds(new Set())}
-            >
-              Clear selection
-            </button>
-          </div>
+          <BulkActionBar
+            count={selectedIds.size}
+            entityLabelPlural="leads"
+            statusOptions={STATUS_OPTIONS}
+            onClear={() => setSelectedIds(new Set())}
+            onUpdate={async (updates) => {
+              await leadsApi.bulkUpdate([...selectedIds], updates);
+              afterBulkAction();
+            }}
+            onDelete={async () => {
+              await leadsApi.bulkDelete([...selectedIds]);
+              afterBulkAction();
+            }}
+          />
         )}
 
         {/* Table */}
@@ -635,28 +721,25 @@ export default function LeadsClient() {
                         Lead Title <SortIcon field="title" />
                       </button>
                     </th>
-                    <th>Contact</th>
-                    <th>Company</th>
                     <th>Stage</th>
-                    <th>Status</th>
-                    <th>Source</th>
-                    <th>
-                      <button className="flex items-center gap-1" onClick={() => toggleSort('value')}>
-                        Value <SortIcon field="value" />
-                      </button>
-                    </th>
-                    <th>Owner</th>
-                    <th>
-                      <button className="flex items-center gap-1" onClick={() => toggleSort('createdAt')}>
-                        Created <SortIcon field="createdAt" />
-                      </button>
-                    </th>
+                    {visibleColumns.map((key) => {
+                      const field = leadFieldOf(key);
+                      return (
+                        <th key={key}>
+                          {LEAD_SORTABLE_TYPES.has(field.type) ? (
+                            <button className="flex items-center gap-1" onClick={() => toggleSort(key)}>
+                              {field.label} <SortIcon field={key} />
+                            </button>
+                          ) : field.label}
+                        </th>
+                      );
+                    })}
                     <th className="w-10" />
                   </tr>
                 </thead>
                 <tbody>
                   {leads.map((lead) => (
-                    <tr key={lead.id} className="table-row">
+                    <tr key={lead.id} className="table-row" onClick={rowNavigate(() => router.push(`/leads/${lead.id}`))}>
                       <td onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
@@ -670,12 +753,6 @@ export default function LeadsClient() {
                           {lead.title}
                         </Link>
                       </td>
-                      <td className="text-slate-600">
-                        {(lead as any).contact
-                          ? `${(lead as any).contact.firstName} ${(lead as any).contact.lastName}`
-                          : '—'}
-                      </td>
-                      <td className="text-slate-600">{(lead as any).company?.name ?? '—'}</td>
                       <td>
                         {(lead as any).stage && (
                           <span className="flex items-center gap-1.5 text-sm">
@@ -687,30 +764,9 @@ export default function LeadsClient() {
                           </span>
                         )}
                       </td>
-                      <td><StatusBadge status={lead.status} /></td>
-                      <td className="text-slate-600">{lead.source ? SOURCE_LABELS[lead.source] ?? lead.source : '—'}</td>
-                      <td className="font-medium text-slate-800">
-                        {lead.value != null
-                          ? formatCurrency(Number(lead.value))
-                          : '—'}
-                      </td>
-                      <td>
-                        {(lead as any).owner ? (
-                          <div className="flex items-center gap-2">
-                            <div className="avatar-sm text-[10px]">
-                              {`${(lead as any).owner.firstName[0]}${(lead as any).owner.lastName[0]}`.toUpperCase()}
-                            </div>
-                            <span className="text-slate-600">
-                              {(lead as any).owner.firstName}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-slate-400">Unassigned</span>
-                        )}
-                      </td>
-                      <td className="text-slate-500">
-                        {new Date(lead.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                      </td>
+                      {visibleColumns.map((key) => (
+                        <td key={key}><LeadCell lead={lead} columnKey={key} /></td>
+                      ))}
                       <td onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-0.5">
                           {canConvert && !lead.convertedDealId && (

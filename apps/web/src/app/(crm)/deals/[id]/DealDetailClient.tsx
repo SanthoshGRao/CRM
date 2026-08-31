@@ -4,13 +4,15 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Trash2, Loader2 } from 'lucide-react';
+import { Pencil, Trash2, Loader2, CheckCircle2, XCircle, RotateCcw } from 'lucide-react';
 import { dealsApi } from '@/lib/api/services';
 import { getErrorMessage } from '@/lib/api/errors';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Can } from '@/components/ui/Can';
+import { usePermissions } from '@/lib/permissions';
 import { DetailRow, ErrorBanner } from '@/components/ui/Field';
+import { InlineEditRow } from '@/components/detail/InlineEditRow';
 import { ActivityTimeline } from '@/components/detail/ActivityTimeline';
 import { RelatedList } from '@/components/detail/RelatedList';
 import { CustomFieldSummary } from '@/components/ui/CustomFieldInputs';
@@ -23,8 +25,10 @@ const STATUS_CLASSES: Record<string, string> = {
 export default function DealDetailClient({ dealId }: { dealId: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { can } = usePermissions();
   const [isEditing, setIsEditing] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   const { data: deal, isLoading, isError, error } = useQuery({
     queryKey: ['deal', dealId],
@@ -38,6 +42,24 @@ export default function DealDetailClient({ dealId }: { dealId: string }) {
       router.push('/deals');
     },
     onError: (err) => setDeleteError(getErrorMessage(err)),
+  });
+
+  const setStatus = useMutation({
+    mutationFn: (status: 'open' | 'won' | 'lost') => dealsApi.update(dealId, { status }),
+    onMutate: () => setStatusError(null),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deal', dealId] });
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+    },
+    onError: (err) => setStatusError(getErrorMessage(err)),
+  });
+
+  const updateField = useMutation({
+    mutationFn: (data: Record<string, unknown>) => dealsApi.update(dealId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deal', dealId] });
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+    },
   });
 
   if (isLoading) {
@@ -110,6 +132,7 @@ export default function DealDetailClient({ dealId }: { dealId: string }) {
       />
 
       <ErrorBanner message={deleteError} />
+      <ErrorBanner message={statusError} />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="flex flex-col gap-6 lg:col-span-1">
@@ -127,27 +150,94 @@ export default function DealDetailClient({ dealId }: { dealId: string }) {
                 )}
               </div>
 
+              <Can permission="deals.update">
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {d.status !== 'won' && (
+                    <button
+                      className="btn-secondary btn-sm"
+                      id="mark-deal-won-btn"
+                      disabled={setStatus.isPending}
+                      onClick={() => setStatus.mutate('won')}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Mark as Won
+                    </button>
+                  )}
+                  {d.status !== 'lost' && (
+                    <button
+                      className="btn-secondary btn-sm"
+                      id="mark-deal-lost-btn"
+                      disabled={setStatus.isPending}
+                      onClick={() => setStatus.mutate('lost')}
+                    >
+                      <XCircle className="h-3.5 w-3.5 text-red-600" /> Mark as Lost
+                    </button>
+                  )}
+                  {d.status !== 'open' && (
+                    <button
+                      className="btn-secondary btn-sm"
+                      id="reopen-deal-btn"
+                      disabled={setStatus.isPending}
+                      onClick={() => setStatus.mutate('open')}
+                    >
+                      {setStatus.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />} Reopen
+                    </button>
+                  )}
+                </div>
+              </Can>
+
               <div className="mt-4 divide-y divide-slate-100 border-t pt-2">
-                <DetailRow label="Probability">{d.probability != null ? `${d.probability}%` : '—'}</DetailRow>
-                <DetailRow label="Expected close">{d.expectedCloseDate ? formatDate(d.expectedCloseDate) : '—'}</DetailRow>
+                <InlineEditRow
+                  label="Probability"
+                  type="number"
+                  value={d.probability}
+                  display={d.probability != null ? `${d.probability}%` : undefined}
+                  editable={can('deals.update')}
+                  onSave={(v) => updateField.mutateAsync({ probability: v == null ? null : Number(v) })}
+                />
+                <InlineEditRow
+                  label="Expected close"
+                  type="date"
+                  value={d.expectedCloseDate}
+                  display={d.expectedCloseDate ? formatDate(d.expectedCloseDate) : undefined}
+                  editable={can('deals.update')}
+                  onSave={(v) => updateField.mutateAsync({ expectedCloseDate: v })}
+                />
                 <DetailRow label="Closed at">{d.closedAt ? formatDate(d.closedAt) : '—'}</DetailRow>
-                <DetailRow label="Contact">
-                  {d.contact ? (
-                    <Link href={`/contacts/${d.contact.id}`} className="text-brand-600 hover:underline">
+                <InlineEditRow
+                  label="Contact"
+                  type="record"
+                  recordSource="contacts"
+                  value={d.contact?.id}
+                  display={d.contact ? (
+                    <Link href={`/contacts/${d.contact.id}`} className="text-brand-600 hover:underline" onClick={(e) => e.stopPropagation()}>
                       {d.contact.firstName} {d.contact.lastName}
                     </Link>
-                  ) : '—'}
-                </DetailRow>
-                <DetailRow label="Company">
-                  {d.company ? (
-                    <Link href={`/companies/${d.company.id}`} className="text-brand-600 hover:underline">
+                  ) : undefined}
+                  editable={can('deals.update')}
+                  onSave={(v) => updateField.mutateAsync({ contactId: v || null })}
+                />
+                <InlineEditRow
+                  label="Company"
+                  type="record"
+                  recordSource="companies"
+                  value={d.company?.id}
+                  display={d.company ? (
+                    <Link href={`/companies/${d.company.id}`} className="text-brand-600 hover:underline" onClick={(e) => e.stopPropagation()}>
                       {d.company.name}
                     </Link>
-                  ) : '—'}
-                </DetailRow>
-                <DetailRow label="Owner">
-                  {d.owner ? `${d.owner.firstName} ${d.owner.lastName}` : 'Unassigned'}
-                </DetailRow>
+                  ) : undefined}
+                  editable={can('deals.update')}
+                  onSave={(v) => updateField.mutateAsync({ companyId: v || null })}
+                />
+                <InlineEditRow
+                  label="Owner"
+                  type="record"
+                  recordSource="users"
+                  value={d.owner?.id}
+                  display={d.owner ? `${d.owner.firstName} ${d.owner.lastName}` : undefined}
+                  editable={can('deals.update')}
+                  onSave={(v) => updateField.mutateAsync({ ownerId: v || null })}
+                />
                 <DetailRow label="Created">{formatDate(d.createdAt)}</DetailRow>
               </div>
             </div>

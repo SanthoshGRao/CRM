@@ -1,14 +1,21 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Plus, Search, Filter, MoreHorizontal, ArrowUpDown, ChevronUp, ChevronDown } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { Plus, Search, MoreHorizontal, ArrowUpDown, ChevronUp, ChevronDown } from 'lucide-react';
 import { clsx } from 'clsx';
 import Link from 'next/link';
 import api from '@/lib/api/client';
+import { dealsApi } from '@/lib/api/services';
 import { Can } from '@/components/ui/Can';
-import { formatCurrency, formatDate } from '@/lib/utils';
-import type { Deal } from '@crm/types';
+import { formatCurrency, formatDate, rowNavigate } from '@/lib/utils';
+import { FilterBuilder } from '@/components/views/FilterBuilder';
+import { ColumnPicker } from '@/components/views/ColumnPicker';
+import { SavedViewsBar } from '@/components/views/SavedViewsBar';
+import { BulkActionBar } from '@/components/views/BulkActionBar';
+import { fieldsFor, defaultColumns, type EntityFieldDef } from '@/lib/views/entityFields';
+import type { Deal, FilterCondition, SavedView } from '@crm/types';
 
 async function fetchDeals(params: Record<string, any>) {
   const query = new URLSearchParams(
@@ -21,6 +28,47 @@ async function fetchDeals(params: Record<string, any>) {
 const STATUS_CLASSES: Record<string, string> = {
   open: 'badge-blue', won: 'badge-green', lost: 'badge-red',
 };
+
+const STATUS_OPTIONS = [
+  { value: 'open', label: 'Open' },
+  { value: 'won', label: 'Won' },
+  { value: 'lost', label: 'Lost' },
+];
+
+const FIELDS = fieldsFor('deal');
+const SORTABLE_TYPES = new Set(['string', 'number', 'date', 'select']);
+
+function fieldOf(key: string): EntityFieldDef {
+  return FIELDS.find((f) => f.key === key) ?? FIELDS[0];
+}
+
+function DealCell({ deal, columnKey }: { deal: any; columnKey: string }) {
+  switch (columnKey) {
+    case 'companyId':
+      return <span className="text-slate-600">{deal.company?.name ?? '—'}</span>;
+    case 'status':
+      return <span className={clsx('badge', STATUS_CLASSES[deal.status] ?? 'badge-gray')}>{deal.status}</span>;
+    case 'value':
+      return <span className="font-medium text-slate-800">{formatCurrency(Number(deal.value ?? 0))}</span>;
+    case 'probability':
+      return <span className="text-slate-600">{deal.probability ?? 0}%</span>;
+    case 'ownerId':
+      return deal.owner ? (
+        <div className="flex items-center gap-2">
+          <div className="avatar-sm text-[10px]">{`${deal.owner.firstName[0]}${deal.owner.lastName[0]}`.toUpperCase()}</div>
+          <span className="text-slate-600">{deal.owner.firstName}</span>
+        </div>
+      ) : <span className="text-slate-400">Unassigned</span>;
+    case 'contactId':
+      return <span className="text-slate-600">{deal.contact ? `${deal.contact.firstName} ${deal.contact.lastName}` : '—'}</span>;
+    case 'expectedCloseDate':
+      return <span className="text-slate-500">{deal.expectedCloseDate ? formatDate(deal.expectedCloseDate) : '—'}</span>;
+    case 'createdAt':
+      return <span className="text-slate-500">{formatDate(deal.createdAt)}</span>;
+    default:
+      return null;
+  }
+}
 
 function TableSkeleton() {
   return (
@@ -38,14 +86,22 @@ function TableSkeleton() {
 }
 
 export default function DealsClient() {
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
+  const [filters, setFilters] = useState<FilterCondition[]>([]);
+  const [columns, setColumns] = useState<string[]>(defaultColumns('deal'));
+  const [activeView, setActiveView] = useState<SavedView | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const filtersParam = filters.length > 0 ? JSON.stringify(filters) : undefined;
 
   const { data, isLoading } = useQuery({
-    queryKey: ['deals', { search, sortBy, sortOrder, page }],
-    queryFn: () => fetchDeals({ search, sortBy, sortOrder, page, limit: 25 }),
+    queryKey: ['deals', { search, sortBy, sortOrder, page, filtersParam }],
+    queryFn: () => fetchDeals({ search, filters: filtersParam, sortBy, sortOrder, page, limit: 25 }),
     placeholderData: (prev) => prev,
   });
 
@@ -68,6 +124,39 @@ export default function DealsClient() {
       : <ChevronDown className="h-3.5 w-3.5 text-brand-600" />;
   };
 
+  function applyView(view: SavedView | null) {
+    setActiveView(view);
+    setPage(1);
+    if (!view) {
+      setFilters([]);
+      setColumns(defaultColumns('deal'));
+      setSortBy('createdAt');
+      setSortOrder('desc');
+      return;
+    }
+    setFilters(view.filters ?? []);
+    setColumns(view.columns?.length ? view.columns : defaultColumns('deal'));
+    if (view.sortBy) setSortBy(view.sortBy);
+    if (view.sortOrder === 'asc' || view.sortOrder === 'desc') setSortOrder(view.sortOrder);
+  }
+
+  function toggleAll() {
+    setSelectedIds((prev) => (prev.size === deals.length ? new Set() : new Set(deals.map((d) => d.id))));
+  }
+
+  function toggleOne(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function afterBulkAction() {
+    setSelectedIds(new Set());
+    queryClient.invalidateQueries({ queryKey: ['deals'] });
+  }
+
   const totalValue = deals.reduce((sum, d) => sum + Number(d.value ?? 0), 0);
 
   return (
@@ -89,6 +178,14 @@ export default function DealsClient() {
       </div>
 
       <div className="card">
+        <SavedViewsBar
+          entityType="deal"
+          entityLabel="deals"
+          activeView={activeView}
+          current={{ filters, columns, sortBy, sortOrder }}
+          onSelect={applyView}
+        />
+
         <div className="flex flex-wrap items-center gap-3 p-4">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -101,10 +198,26 @@ export default function DealsClient() {
               onChange={(e) => { setSearch((e.target as HTMLInputElement).value); setPage(1); }}
             />
           </div>
-          <button className="btn-secondary btn-sm" id="deals-filter-btn">
-            <Filter className="h-3.5 w-3.5" /> Filters
-          </button>
+          <FilterBuilder entityType="deal" value={filters} onChange={(f) => { setFilters(f); setPage(1); }} />
+          <ColumnPicker entityType="deal" value={columns} onChange={setColumns} />
         </div>
+
+        {selectedIds.size > 0 && (
+          <BulkActionBar
+            count={selectedIds.size}
+            entityLabelPlural="deals"
+            statusOptions={STATUS_OPTIONS}
+            onClear={() => setSelectedIds(new Set())}
+            onUpdate={async (updates) => {
+              await dealsApi.bulkUpdate([...selectedIds], updates);
+              afterBulkAction();
+            }}
+            onDelete={async () => {
+              await dealsApi.bulkDelete([...selectedIds]);
+              afterBulkAction();
+            }}
+          />
+        )}
 
         <div className="overflow-x-auto">
           {isLoading ? (
@@ -114,9 +227,9 @@ export default function DealsClient() {
               <div className="empty-state-icon"><Search className="h-8 w-8" /></div>
               <p className="empty-state-title">No deals found</p>
               <p className="empty-state-desc">
-                {search ? 'Try a different search term.' : 'Create your first deal to get started.'}
+                {search || filters.length > 0 ? 'Try different search or filters.' : 'Create your first deal to get started.'}
               </p>
-              {!search && (
+              {!search && filters.length === 0 && (
                 <Can permission="deals.create"><Link href="/deals/new" className="btn-primary" id="create-first-deal-btn">
                   <Plus className="h-4 w-4" /> Add Deal
                 </Link></Can>
@@ -126,38 +239,46 @@ export default function DealsClient() {
             <table className="data-table">
               <thead className="table-header">
                 <tr>
+                  <th className="w-10">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size === deals.length && deals.length > 0}
+                      onChange={toggleAll}
+                      aria-label="Select all deals"
+                    />
+                  </th>
                   <th>
                     <button className="flex items-center gap-1" onClick={() => toggleSort('name')}>
                       Deal Name <SortIcon field="name" />
                     </button>
                   </th>
-                  <th>Company</th>
                   <th>Stage</th>
-                  <th>Status</th>
-                  <th>
-                    <button className="flex items-center gap-1" onClick={() => toggleSort('value')}>
-                      Value <SortIcon field="value" />
-                    </button>
-                  </th>
-                  <th>Probability</th>
-                  <th>Owner</th>
-                  <th>
-                    <button className="flex items-center gap-1" onClick={() => toggleSort('expectedCloseDate')}>
-                      Close Date <SortIcon field="expectedCloseDate" />
-                    </button>
-                  </th>
+                  {columns.map((key) => {
+                    const field = fieldOf(key);
+                    return (
+                      <th key={key}>
+                        {SORTABLE_TYPES.has(field.type) ? (
+                          <button className="flex items-center gap-1" onClick={() => toggleSort(key)}>
+                            {field.label} <SortIcon field={key} />
+                          </button>
+                        ) : field.label}
+                      </th>
+                    );
+                  })}
                   <th className="w-10" />
                 </tr>
               </thead>
               <tbody>
                 {deals.map((deal) => (
-                  <tr key={deal.id} className="table-row">
+                  <tr key={deal.id} className="table-row" onClick={rowNavigate(() => router.push(`/deals/${deal.id}`))}>
+                    <td>
+                      <input type="checkbox" checked={selectedIds.has(deal.id)} onChange={() => toggleOne(deal.id)} aria-label={`Select ${deal.name}`} />
+                    </td>
                     <td>
                       <Link href={`/deals/${deal.id}`} className="font-medium text-slate-900 hover:text-brand-600">
                         {deal.name}
                       </Link>
                     </td>
-                    <td className="text-slate-600">{(deal as any).company?.name ?? '—'}</td>
                     <td>
                       {(deal as any).stage && (
                         <span className="flex items-center gap-1.5 text-sm">
@@ -166,20 +287,9 @@ export default function DealsClient() {
                         </span>
                       )}
                     </td>
-                    <td><span className={clsx('badge', STATUS_CLASSES[deal.status] ?? 'badge-gray')}>{deal.status}</span></td>
-                    <td className="font-medium text-slate-800">{formatCurrency(Number(deal.value ?? 0))}</td>
-                    <td className="text-slate-600">{deal.probability ?? 0}%</td>
-                    <td>
-                      {(deal as any).owner ? (
-                        <div className="flex items-center gap-2">
-                          <div className="avatar-sm text-[10px]">
-                            {`${(deal as any).owner.firstName[0]}${(deal as any).owner.lastName[0]}`.toUpperCase()}
-                          </div>
-                          <span className="text-slate-600">{(deal as any).owner.firstName}</span>
-                        </div>
-                      ) : <span className="text-slate-400">Unassigned</span>}
-                    </td>
-                    <td className="text-slate-500">{deal.expectedCloseDate ? formatDate(deal.expectedCloseDate) : '—'}</td>
+                    {columns.map((key) => (
+                      <td key={key}><DealCell deal={deal} columnKey={key} /></td>
+                    ))}
                     <td>
                       <button className="rounded p-1 text-slate-400 hover:text-slate-600 hover:bg-surface-2">
                         <MoreHorizontal className="h-4 w-4" />

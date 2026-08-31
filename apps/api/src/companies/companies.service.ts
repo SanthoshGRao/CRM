@@ -1,8 +1,26 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { WorkflowEngineService } from '../workflows/workflow-engine.service';
+import { applyFilters, FilterFieldMap } from '../common/filters/apply-filters.util';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
+
+/** Fields the advanced filter builder (and saved views) may query on. */
+export const COMPANY_FILTER_FIELDS: FilterFieldMap = {
+  name: 'string',
+  industry: 'string',
+  website: 'string',
+  email: 'string',
+  phone: 'string',
+  city: 'string',
+  state: 'string',
+  country: 'string',
+  employees: 'number',
+  annualRevenue: 'number',
+  status: 'select',
+  ownerId: 'select',
+  createdAt: 'date',
+};
 
 const COMPANY_INCLUDE = {
   owner: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
@@ -23,6 +41,8 @@ export class CompaniesService {
       search?: string;
       ownerId?: string;
       status?: string;
+      isCustomer?: string | boolean;
+      filters?: string;
       sortBy?: string;
       sortOrder?: 'asc' | 'desc';
     },
@@ -32,6 +52,7 @@ export class CompaniesService {
       search,
       ownerId,
       status,
+      isCustomer,
       sortBy = 'createdAt',
       sortOrder = 'desc',
     } = query;
@@ -44,13 +65,25 @@ export class CompaniesService {
     if (search) {
       where.name = { contains: search, mode: 'insensitive' };
     }
+    // A company is a real customer once it has at least one deal it accepted (status: won).
+    if (isCustomer === 'true' || isCustomer === true) {
+      where.deals = { some: { status: 'won' } };
+    }
     if (ownerId) where.ownerId = ownerId;
     if (status) where.status = status;
+    // Advanced conditions (from the filter builder or a saved view) layer on
+    // top of, and can override, the quick filters above.
+    applyFilters(where, query.filters, COMPANY_FILTER_FIELDS);
+
+    const include =
+      isCustomer === 'true' || isCustomer === true
+        ? { ...COMPANY_INCLUDE, deals: { where: { status: 'won' as const }, select: { id: true, name: true, value: true } } }
+        : COMPANY_INCLUDE;
 
     const [data, total] = await Promise.all([
       this.prisma.company.findMany({
         where,
-        include: COMPANY_INCLUDE,
+        include,
         orderBy: { [sortBy]: sortOrder },
         skip: (page - 1) * limit,
         take: limit,

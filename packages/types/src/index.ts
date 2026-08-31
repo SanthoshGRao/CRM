@@ -519,23 +519,43 @@ export interface ListQueryParams {
 export interface FilterCondition {
   field: string;
   operator: FilterOperator;
-  value: unknown;
+  value?: unknown;
 }
 
 export type FilterOperator =
-  | 'eq'
-  | 'neq'
+  | 'equals'
+  | 'not_equals'
+  | 'contains'
   | 'gt'
   | 'gte'
   | 'lt'
   | 'lte'
-  | 'contains'
-  | 'starts_with'
-  | 'ends_with'
-  | 'in'
-  | 'not_in'
-  | 'is_null'
-  | 'is_not_null';
+  | 'is_empty'
+  | 'is_not_empty'
+  | 'in';
+
+// ─────────────────────────────────────────────────────────────
+// Saved Views
+// ─────────────────────────────────────────────────────────────
+
+export type SavedViewEntityType = 'contact' | 'company' | 'lead' | 'deal' | 'task';
+
+export interface SavedView {
+  id: string;
+  tenantId: string;
+  createdById: string;
+  entityType: SavedViewEntityType;
+  name: string;
+  filters: FilterCondition[];
+  columns: string[];
+  sortBy?: string | null;
+  sortOrder?: string | null;
+  isPublic: boolean;
+  /** Set by the API: whether the current user created this view. */
+  isMine?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
 
 // ─────────────────────────────────────────────────────────────
 // Workflow Types

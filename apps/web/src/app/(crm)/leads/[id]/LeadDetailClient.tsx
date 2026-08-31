@@ -10,10 +10,13 @@ import { getErrorMessage } from '@/lib/api/errors';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Can } from '@/components/ui/Can';
+import { usePermissions } from '@/lib/permissions';
 import { DetailRow, ErrorBanner } from '@/components/ui/Field';
+import { InlineEditRow } from '@/components/detail/InlineEditRow';
 import { ActivityTimeline } from '@/components/detail/ActivityTimeline';
 import { RelatedList } from '@/components/detail/RelatedList';
 import { CustomFieldSummary } from '@/components/ui/CustomFieldInputs';
+import { fieldsFor } from '@/lib/views/entityFields';
 import { LeadForm, toLeadFormValues } from '../LeadForm';
 import { ConvertLeadDialog } from '../ConvertLeadDialog';
 
@@ -22,9 +25,12 @@ const STATUS_CLASSES: Record<string, string> = {
   unqualified: 'badge-gray', converted: 'badge-green', lost: 'badge-red',
 };
 
+const SOURCE_OPTIONS = fieldsFor('lead').find((f) => f.key === 'source')?.options ?? [];
+
 export default function LeadDetailClient({ leadId }: { leadId: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { can } = usePermissions();
   const [isEditing, setIsEditing] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -41,6 +47,14 @@ export default function LeadDetailClient({ leadId }: { leadId: string }) {
       router.push('/leads');
     },
     onError: (err) => setDeleteError(getErrorMessage(err)),
+  });
+
+  const updateField = useMutation({
+    mutationFn: (data: Record<string, unknown>) => leadsApi.update(leadId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lead', leadId] });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+    },
   });
 
   if (isLoading) {
@@ -145,27 +159,74 @@ export default function LeadDetailClient({ leadId }: { leadId: string }) {
               </div>
 
               <div className="mt-4 divide-y divide-slate-100 border-t pt-2">
-                <DetailRow label="Value">{l.value != null ? formatCurrency(Number(l.value)) : '—'}</DetailRow>
-                <DetailRow label="Probability">{l.probability != null ? `${l.probability}%` : '—'}</DetailRow>
-                <DetailRow label="Source">{l.source ? String(l.source).replace(/_/g, ' ') : '—'}</DetailRow>
-                <DetailRow label="Expected close">{l.expectedCloseDate ? formatDate(l.expectedCloseDate) : '—'}</DetailRow>
-                <DetailRow label="Contact">
-                  {l.contact ? (
+                <InlineEditRow
+                  label="Value"
+                  type="number"
+                  value={l.value}
+                  display={l.value != null ? formatCurrency(Number(l.value)) : undefined}
+                  editable={can('leads.update')}
+                  onSave={(v) => updateField.mutateAsync({ value: v == null ? null : Number(v) })}
+                />
+                <InlineEditRow
+                  label="Probability"
+                  type="number"
+                  value={l.probability}
+                  display={l.probability != null ? `${l.probability}%` : undefined}
+                  editable={can('leads.update')}
+                  onSave={(v) => updateField.mutateAsync({ probability: v == null ? null : Number(v) })}
+                />
+                <InlineEditRow
+                  label="Source"
+                  type="select"
+                  options={SOURCE_OPTIONS}
+                  value={l.source}
+                  display={l.source ? String(l.source).replace(/_/g, ' ') : undefined}
+                  editable={can('leads.update')}
+                  onSave={(v) => updateField.mutateAsync({ source: v || null })}
+                />
+                <InlineEditRow
+                  label="Expected close"
+                  type="date"
+                  value={l.expectedCloseDate}
+                  display={l.expectedCloseDate ? formatDate(l.expectedCloseDate) : undefined}
+                  editable={can('leads.update')}
+                  onSave={(v) => updateField.mutateAsync({ expectedCloseDate: v })}
+                />
+                <InlineEditRow
+                  label="Contact"
+                  type="record"
+                  recordSource="contacts"
+                  value={l.contact?.id}
+                  display={l.contact ? (
                     <Link href={`/contacts/${l.contact.id}`} className="text-brand-600 hover:underline">
                       {l.contact.firstName} {l.contact.lastName}
                     </Link>
-                  ) : '—'}
-                </DetailRow>
-                <DetailRow label="Company">
-                  {l.company ? (
+                  ) : undefined}
+                  editable={can('leads.update')}
+                  onSave={(v) => updateField.mutateAsync({ contactId: v || null })}
+                />
+                <InlineEditRow
+                  label="Company"
+                  type="record"
+                  recordSource="companies"
+                  value={l.company?.id}
+                  display={l.company ? (
                     <Link href={`/companies/${l.company.id}`} className="text-brand-600 hover:underline">
                       {l.company.name}
                     </Link>
-                  ) : '—'}
-                </DetailRow>
-                <DetailRow label="Owner">
-                  {l.owner ? `${l.owner.firstName} ${l.owner.lastName}` : 'Unassigned'}
-                </DetailRow>
+                  ) : undefined}
+                  editable={can('leads.update')}
+                  onSave={(v) => updateField.mutateAsync({ companyId: v || null })}
+                />
+                <InlineEditRow
+                  label="Owner"
+                  type="record"
+                  recordSource="users"
+                  value={l.owner?.id}
+                  display={l.owner ? `${l.owner.firstName} ${l.owner.lastName}` : undefined}
+                  editable={can('leads.update')}
+                  onSave={(v) => updateField.mutateAsync({ ownerId: v || null })}
+                />
                 {l.convertedDealId && (
                   <DetailRow label="Converted">
                     <Link href={`/deals/${l.convertedDealId}`} className="text-brand-600 hover:underline">

@@ -2,13 +2,20 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { Plus, Search, CheckSquare, Circle, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import { clsx } from 'clsx';
 import api from '@/lib/api/client';
+import { tasksApi } from '@/lib/api/services';
 import { Can } from '@/components/ui/Can';
-import { formatDate } from '@/lib/utils';
-import type { Task } from '@crm/types';
+import { formatDate, rowNavigate } from '@/lib/utils';
+import { FilterBuilder } from '@/components/views/FilterBuilder';
+import { ColumnPicker } from '@/components/views/ColumnPicker';
+import { SavedViewsBar } from '@/components/views/SavedViewsBar';
+import { BulkActionBar } from '@/components/views/BulkActionBar';
+import { fieldsFor, defaultColumns, type EntityFieldDef } from '@/lib/views/entityFields';
+import type { Task, FilterCondition, SavedView } from '@crm/types';
 
 async function fetchTasks(params: Record<string, any>) {
   const query = new URLSearchParams(
@@ -26,19 +33,60 @@ const STATUS_CLASSES: Record<string, string> = {
   pending: 'badge-gray', in_progress: 'badge-blue', completed: 'badge-green', cancelled: 'badge-red',
 };
 
+const STATUS_OPTIONS = [
+  { value: 'pending', label: 'Pending' },
+  { value: 'in_progress', label: 'In progress' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
+
+const FIELDS = fieldsFor('task');
+
+function fieldOf(key: string): EntityFieldDef {
+  return FIELDS.find((f) => f.key === key) ?? FIELDS[0];
+}
+
 function isOverdue(task: Task) {
   return task.dueDate && task.status !== 'completed' && task.status !== 'cancelled' && new Date(task.dueDate) < new Date();
 }
 
+function TaskCell({ task, columnKey }: { task: any; columnKey: string }) {
+  switch (columnKey) {
+    case 'priority':
+      return <span className={clsx('badge', PRIORITY_CLASSES[task.priority] ?? 'badge-gray')}>{task.priority}</span>;
+    case 'status':
+      return <span className={clsx('badge', STATUS_CLASSES[task.status] ?? 'badge-gray')}>{task.status.replace('_', ' ')}</span>;
+    case 'assignedToId':
+      return task.assignedTo ? (
+        <div className="flex items-center gap-2">
+          <div className="avatar-sm text-[10px]">{`${task.assignedTo.firstName[0]}${task.assignedTo.lastName[0]}`.toUpperCase()}</div>
+          <span className="text-slate-600">{task.assignedTo.firstName}</span>
+        </div>
+      ) : <span className="text-slate-400">Unassigned</span>;
+    case 'dueDate':
+      return <span className={clsx('text-sm', isOverdue(task) ? 'text-red-600 font-medium' : 'text-slate-500')}>{task.dueDate ? formatDate(task.dueDate) : '—'}</span>;
+    case 'createdAt':
+      return <span className="text-slate-500">{formatDate(task.createdAt)}</span>;
+    default:
+      return null;
+  }
+}
+
 export default function TasksClient() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
+  const [filters, setFilters] = useState<FilterCondition[]>([]);
+  const [columns, setColumns] = useState<string[]>(defaultColumns('task'));
+  const [activeView, setActiveView] = useState<SavedView | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const filtersParam = filters.length > 0 ? JSON.stringify(filters) : undefined;
 
   const { data, isLoading } = useQuery({
-    queryKey: ['tasks', { search, status, page }],
-    queryFn: () => fetchTasks({ search, status, page, limit: 25 }),
+    queryKey: ['tasks', { search, page, filtersParam }],
+    queryFn: () => fetchTasks({ search, filters: filtersParam, page, limit: 25 }),
     placeholderData: (prev) => prev,
   });
 
@@ -51,12 +99,34 @@ export default function TasksClient() {
   const tasks: Task[] = data?.data ?? [];
   const pagination = data?.pagination;
 
-  const FILTERS = [
-    { label: 'All', value: '' },
-    { label: 'Pending', value: 'pending' },
-    { label: 'In Progress', value: 'in_progress' },
-    { label: 'Completed', value: 'completed' },
-  ];
+  function applyView(view: SavedView | null) {
+    setActiveView(view);
+    setPage(1);
+    if (!view) {
+      setFilters([]);
+      setColumns(defaultColumns('task'));
+      return;
+    }
+    setFilters(view.filters ?? []);
+    setColumns(view.columns?.length ? view.columns : defaultColumns('task'));
+  }
+
+  function toggleAll() {
+    setSelectedIds((prev) => (prev.size === tasks.length ? new Set() : new Set(tasks.map((t) => t.id))));
+  }
+
+  function toggleOne(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function afterBulkAction() {
+    setSelectedIds(new Set());
+    queryClient.invalidateQueries({ queryKey: ['tasks'] });
+  }
 
   return (
     <div className="page-container">
@@ -73,6 +143,14 @@ export default function TasksClient() {
       </div>
 
       <div className="card">
+        <SavedViewsBar
+          entityType="task"
+          entityLabel="tasks"
+          activeView={activeView}
+          current={{ filters, columns }}
+          onSelect={applyView}
+        />
+
         <div className="flex flex-wrap items-center gap-3 p-4">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -85,21 +163,27 @@ export default function TasksClient() {
               onChange={(e) => { setSearch((e.target as HTMLInputElement).value); setPage(1); }}
             />
           </div>
-          <div className="flex rounded-md border border-slate-300 overflow-hidden">
-            {FILTERS.map((f) => (
-              <button
-                key={f.value}
-                className={clsx(
-                  'px-3 py-1.5 text-sm',
-                  status === f.value ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-surface-2',
-                )}
-                onClick={() => { setStatus(f.value); setPage(1); }}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          <FilterBuilder entityType="task" value={filters} onChange={(f) => { setFilters(f); setPage(1); }} />
+          <ColumnPicker entityType="task" value={columns} onChange={setColumns} />
         </div>
+
+        {selectedIds.size > 0 && (
+          <BulkActionBar
+            count={selectedIds.size}
+            entityLabelPlural="tasks"
+            ownerField="assignedToId"
+            statusOptions={STATUS_OPTIONS}
+            onClear={() => setSelectedIds(new Set())}
+            onUpdate={async (updates) => {
+              await tasksApi.bulkUpdate([...selectedIds], updates);
+              afterBulkAction();
+            }}
+            onDelete={async () => {
+              await tasksApi.bulkDelete([...selectedIds]);
+              afterBulkAction();
+            }}
+          />
+        )}
 
         <div className="overflow-x-auto">
           {isLoading ? (
@@ -126,22 +210,27 @@ export default function TasksClient() {
             <table className="data-table">
               <thead className="table-header">
                 <tr>
+                  <th className="w-10">
+                    <input type="checkbox" checked={selectedIds.size === tasks.length && tasks.length > 0} onChange={toggleAll} aria-label="Select all tasks" />
+                  </th>
                   <th className="w-10" />
                   <th>Task</th>
                   <th>Related To</th>
-                  <th>Priority</th>
-                  <th>Status</th>
-                  <th>Assignee</th>
-                  <th>Due Date</th>
+                  {columns.map((key) => {
+                    const field = fieldOf(key);
+                    return <th key={key}>{field.label}</th>;
+                  })}
                 </tr>
               </thead>
               <tbody>
                 {tasks.map((task) => {
                   const done = task.status === 'completed';
-                  const related = (task as any).lead ?? (task as any).deal;
                   const relatedLabel = (task as any).lead?.title ?? (task as any).deal?.name;
                   return (
-                    <tr key={task.id} className="table-row">
+                    <tr key={task.id} className="table-row" onClick={rowNavigate(() => router.push(`/tasks/${task.id}`))}>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" checked={selectedIds.has(task.id)} onChange={() => toggleOne(task.id)} aria-label={`Select ${task.title}`} />
+                      </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => toggleComplete.mutate({ id: task.id, done: !done })}
@@ -163,21 +252,9 @@ export default function TasksClient() {
                         {task.description && <p className="text-xs text-slate-500 mt-0.5">{task.description}</p>}
                       </td>
                       <td className="text-slate-600">{relatedLabel ?? '—'}</td>
-                      <td><span className={clsx('badge', PRIORITY_CLASSES[task.priority] ?? 'badge-gray')}>{task.priority}</span></td>
-                      <td><span className={clsx('badge', STATUS_CLASSES[task.status] ?? 'badge-gray')}>{task.status.replace('_', ' ')}</span></td>
-                      <td>
-                        {(task as any).assignedTo ? (
-                          <div className="flex items-center gap-2">
-                            <div className="avatar-sm text-[10px]">
-                              {`${(task as any).assignedTo.firstName[0]}${(task as any).assignedTo.lastName[0]}`.toUpperCase()}
-                            </div>
-                            <span className="text-slate-600">{(task as any).assignedTo.firstName}</span>
-                          </div>
-                        ) : <span className="text-slate-400">Unassigned</span>}
-                      </td>
-                      <td className={clsx('text-sm', isOverdue(task) ? 'text-red-600 font-medium' : 'text-slate-500')}>
-                        {task.dueDate ? formatDate(task.dueDate) : '—'}
-                      </td>
+                      {columns.map((key) => (
+                        <td key={key}><TaskCell task={task} columnKey={key} /></td>
+                      ))}
                     </tr>
                   );
                 })}

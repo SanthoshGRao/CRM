@@ -2,11 +2,12 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Plus, Search, Building2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { adminTenantsApi } from '@/lib/api/admin-client';
-import { formatDate } from '@/lib/utils';
+import { formatDate, rowNavigate } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/PageHeader';
 
 const STATUS_FILTERS = [
@@ -17,6 +18,7 @@ const STATUS_FILTERS = [
 ];
 
 export default function AdminCustomersPage() {
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
@@ -102,7 +104,7 @@ export default function AdminCustomersPage() {
               </thead>
               <tbody>
                 {tenants.map((t) => (
-                  <tr key={t.id} className="table-row">
+                  <tr key={t.id} className="table-row" onClick={rowNavigate(() => router.push(`/admin/customers/${t.id}`))}>
                     <td>
                       <div className="flex items-center gap-3">
                         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-600">

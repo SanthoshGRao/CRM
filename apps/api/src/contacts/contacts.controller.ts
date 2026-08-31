@@ -39,6 +39,7 @@ export class ContactsController {
   @ApiQuery({ name: 'companyId', required: false })
   @ApiQuery({ name: 'ownerId', required: false })
   @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'isCustomer', required: false, description: 'true = only contacts with at least one won deal' })
   async findAll(@CurrentUser() user: any, @Query() query: any) {
     const result = await this.contactsService.findAll(user.tenantId, query, scopeFilter(user, 'contact'));
     return { success: true, ...result };

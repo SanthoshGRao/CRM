@@ -3,8 +3,25 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { PipelinesService } from '../pipelines/pipelines.service';
 import { WorkflowEngineService } from '../workflows/workflow-engine.service';
 import { PushService } from '../push/push.service';
+import { applyFilters, FilterFieldMap } from '../common/filters/apply-filters.util';
 import { CreateDealDto } from './dto/create-deal.dto';
 import { UpdateDealDto } from './dto/update-deal.dto';
+
+/** Fields the advanced filter builder (and saved views) may query on. */
+export const DEAL_FILTER_FIELDS: FilterFieldMap = {
+  name: 'string',
+  value: 'number',
+  probability: 'number',
+  status: 'select',
+  stageId: 'select',
+  pipelineId: 'select',
+  ownerId: 'select',
+  contactId: 'select',
+  companyId: 'select',
+  expectedCloseDate: 'date',
+  closedAt: 'date',
+  createdAt: 'date',
+};
 
 const DEAL_INCLUDE = {
   contact: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
@@ -33,6 +50,7 @@ export class DealsService {
       ownerId?: string;
       status?: string;
       pipelineId?: string;
+      filters?: string;
       sortBy?: string;
       sortOrder?: 'asc' | 'desc';
     },
@@ -58,6 +76,9 @@ export class DealsService {
     if (ownerId) where.ownerId = ownerId;
     if (status) where.status = status;
     if (pipelineId) where.pipelineId = pipelineId;
+    // Advanced conditions (from the filter builder or a saved view) layer on
+    // top of, and can override, the quick filters above.
+    applyFilters(where, query.filters, DEAL_FILTER_FIELDS);
 
     const [data, total] = await Promise.all([
       this.prisma.deal.findMany({
@@ -187,8 +208,20 @@ export class DealsService {
       expectedCloseDate: dto.expectedCloseDate ? new Date(dto.expectedCloseDate) : undefined,
     };
 
-    if (dto.status === 'won' || dto.status === 'lost') {
-      updateData.closedAt = new Date();
+    // Derive status from the destination stage's isWon/isLost flags when the
+    // caller moved the deal but didn't explicitly set a status (e.g. dragging
+    // a deal into a "Closed Won" stage should actually mark it won).
+    let nextStatus = dto.status;
+    if (!nextStatus && dto.stageId && dto.stageId !== oldStageId) {
+      const nextStage = await this.prisma.pipelineStage.findUnique({ where: { id: dto.stageId } });
+      if (nextStage?.isWon) nextStatus = 'won';
+      else if (nextStage?.isLost) nextStatus = 'lost';
+      else if (existing.status !== 'open') nextStatus = 'open';
+    }
+
+    if (nextStatus) {
+      updateData.status = nextStatus;
+      updateData.closedAt = nextStatus === 'won' || nextStatus === 'lost' ? new Date() : null;
     }
 
     const deal = await this.prisma.deal.update({

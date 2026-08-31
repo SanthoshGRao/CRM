@@ -9,9 +9,26 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { PipelinesService } from '../pipelines/pipelines.service';
 import { WorkflowEngineService } from '../workflows/workflow-engine.service';
 import { PushService } from '../push/push.service';
+import { applyFilters, FilterFieldMap } from '../common/filters/apply-filters.util';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 import { ConvertLeadDto } from './dto/convert-lead.dto';
+
+/** Fields the advanced filter builder (and saved views) may query on. */
+export const LEAD_FILTER_FIELDS: FilterFieldMap = {
+  title: 'string',
+  value: 'number',
+  probability: 'number',
+  status: 'select',
+  source: 'select',
+  stageId: 'select',
+  pipelineId: 'select',
+  ownerId: 'select',
+  contactId: 'select',
+  companyId: 'select',
+  expectedCloseDate: 'date',
+  createdAt: 'date',
+};
 
 const LEAD_INCLUDE = {
   contact: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
@@ -41,6 +58,7 @@ export class LeadsService {
       ownerId?: string;
       status?: string;
       pipelineId?: string;
+      filters?: string;
       sortBy?: string;
       sortOrder?: 'asc' | 'desc';
     },
@@ -68,6 +86,9 @@ export class LeadsService {
     if (ownerId) where.ownerId = ownerId;
     if (status) where.status = status;
     if (pipelineId) where.pipelineId = pipelineId;
+    // Advanced conditions (from the filter builder or a saved view) layer on
+    // top of, and can override, the quick filters above.
+    applyFilters(where, query.filters, LEAD_FILTER_FIELDS);
 
     const [data, total] = await Promise.all([
       this.prisma.lead.findMany({

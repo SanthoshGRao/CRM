@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { rowNavigate } from '@/lib/utils';
 
 export interface RelatedItem {
   id: string;
@@ -20,6 +22,8 @@ export function RelatedList({
   emptyLabel: string;
   action?: React.ReactNode;
 }) {
+  const router = useRouter();
+
   return (
     <div className="card">
       <div className="card-header">
@@ -32,7 +36,11 @@ export function RelatedList({
         ) : (
           <ul className="flex flex-col divide-y divide-slate-100">
             {items.map((item) => (
-              <li key={item.id} className="flex items-center justify-between gap-3 py-2">
+              <li
+                key={item.id}
+                className="flex cursor-pointer items-center justify-between gap-3 py-2"
+                onClick={rowNavigate(() => router.push(item.href))}
+              >
                 <Link href={item.href} className="truncate text-sm font-medium text-slate-800 hover:text-brand-600">
                   {item.label}
                 </Link>

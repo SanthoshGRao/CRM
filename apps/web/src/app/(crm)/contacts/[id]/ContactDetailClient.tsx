@@ -10,7 +10,9 @@ import { getErrorMessage } from '@/lib/api/errors';
 import { formatCurrency, formatDate, getInitials } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Can } from '@/components/ui/Can';
+import { usePermissions } from '@/lib/permissions';
 import { DetailRow, ErrorBanner } from '@/components/ui/Field';
+import { InlineEditRow } from '@/components/detail/InlineEditRow';
 import { ActivityTimeline } from '@/components/detail/ActivityTimeline';
 import { RelatedList } from '@/components/detail/RelatedList';
 import { CustomFieldSummary } from '@/components/ui/CustomFieldInputs';
@@ -19,6 +21,7 @@ import { ContactForm, toContactFormValues } from '../ContactForm';
 export default function ContactDetailClient({ contactId }: { contactId: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { can } = usePermissions();
   const [isEditing, setIsEditing] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -34,6 +37,14 @@ export default function ContactDetailClient({ contactId }: { contactId: string }
       router.push('/contacts');
     },
     onError: (err) => setDeleteError(getErrorMessage(err)),
+  });
+
+  const updateField = useMutation({
+    mutationFn: (data: Record<string, unknown>) => contactsApi.update(contactId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contact', contactId] });
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+    },
   });
 
   if (isLoading) {
@@ -122,37 +133,64 @@ export default function ContactDetailClient({ contactId }: { contactId: string }
               </div>
 
               <div className="mt-4 divide-y divide-slate-100 border-t pt-2">
-                <DetailRow label="Email">
-                  {contact.email ? (
+                <InlineEditRow
+                  label="Email"
+                  type="text"
+                  value={contact.email}
+                  display={contact.email ? (
                     <a href={`mailto:${contact.email}`} className="inline-flex items-center gap-1 text-brand-600 hover:underline">
                       <Mail className="h-3.5 w-3.5" /> {contact.email}
                     </a>
-                  ) : '—'}
-                </DetailRow>
-                <DetailRow label="Phone">
-                  {contact.phone ? (
+                  ) : undefined}
+                  editable={can('contacts.update')}
+                  onSave={(v) => updateField.mutateAsync({ email: v })}
+                />
+                <InlineEditRow
+                  label="Phone"
+                  type="text"
+                  value={contact.phone}
+                  display={contact.phone ? (
                     <a href={`tel:${contact.phone}`} className="inline-flex items-center gap-1 text-brand-600 hover:underline">
                       <Phone className="h-3.5 w-3.5" /> {contact.phone}
                     </a>
-                  ) : '—'}
-                </DetailRow>
-                <DetailRow label="Mobile">
-                  {contact.mobile ? (
+                  ) : undefined}
+                  editable={can('contacts.update')}
+                  onSave={(v) => updateField.mutateAsync({ phone: v })}
+                />
+                <InlineEditRow
+                  label="Mobile"
+                  type="text"
+                  value={contact.mobile}
+                  display={contact.mobile ? (
                     <a href={`tel:${contact.mobile}`} className="inline-flex items-center gap-1 text-brand-600 hover:underline">
                       <Smartphone className="h-3.5 w-3.5" /> {contact.mobile}
                     </a>
-                  ) : '—'}
-                </DetailRow>
-                <DetailRow label="Company">
-                  {contact.company ? (
+                  ) : undefined}
+                  editable={can('contacts.update')}
+                  onSave={(v) => updateField.mutateAsync({ mobile: v })}
+                />
+                <InlineEditRow
+                  label="Company"
+                  type="record"
+                  recordSource="companies"
+                  value={contact.company?.id}
+                  display={contact.company ? (
                     <Link href={`/companies/${contact.company.id}`} className="text-brand-600 hover:underline">
                       {contact.company.name}
                     </Link>
-                  ) : '—'}
-                </DetailRow>
-                <DetailRow label="Owner">
-                  {contact.owner ? `${contact.owner.firstName} ${contact.owner.lastName}` : 'Unassigned'}
-                </DetailRow>
+                  ) : undefined}
+                  editable={can('contacts.update')}
+                  onSave={(v) => updateField.mutateAsync({ companyId: v || null })}
+                />
+                <InlineEditRow
+                  label="Owner"
+                  type="record"
+                  recordSource="users"
+                  value={contact.owner?.id}
+                  display={contact.owner ? `${contact.owner.firstName} ${contact.owner.lastName}` : undefined}
+                  editable={can('contacts.update')}
+                  onSave={(v) => updateField.mutateAsync({ ownerId: v || null })}
+                />
                 <DetailRow label="Tags">
                   {Array.isArray(contact.tags) && contact.tags.length > 0 ? (
                     <span className="flex flex-wrap justify-end gap-1">

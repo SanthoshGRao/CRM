@@ -38,6 +38,7 @@ export class CompaniesController {
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'ownerId', required: false })
   @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'isCustomer', required: false, description: 'true = only companies with at least one won deal' })
   async findAll(@CurrentUser() user: any, @Query() query: any) {
     const result = await this.companiesService.findAll(user.tenantId, query, scopeFilter(user, 'company'));
     return { success: true, ...result };

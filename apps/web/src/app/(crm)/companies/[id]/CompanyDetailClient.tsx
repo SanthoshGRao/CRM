@@ -9,7 +9,9 @@ import { getErrorMessage } from '@/lib/api/errors';
 import { formatCurrency, formatDate, getInitials } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Can } from '@/components/ui/Can';
+import { usePermissions } from '@/lib/permissions';
 import { DetailRow, ErrorBanner } from '@/components/ui/Field';
+import { InlineEditRow } from '@/components/detail/InlineEditRow';
 import { ActivityTimeline } from '@/components/detail/ActivityTimeline';
 import { RelatedList } from '@/components/detail/RelatedList';
 import { CustomFieldSummary } from '@/components/ui/CustomFieldInputs';
@@ -18,6 +20,7 @@ import { CompanyForm, toCompanyFormValues } from '../CompanyForm';
 export default function CompanyDetailClient({ companyId }: { companyId: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { can } = usePermissions();
   const [isEditing, setIsEditing] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -33,6 +36,14 @@ export default function CompanyDetailClient({ companyId }: { companyId: string }
       router.push('/companies');
     },
     onError: (err) => setDeleteError(getErrorMessage(err)),
+  });
+
+  const updateField = useMutation({
+    mutationFn: (data: Record<string, unknown>) => companiesApi.update(companyId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['company', companyId] });
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+    },
   });
 
   if (isLoading) {
@@ -132,47 +143,102 @@ export default function CompanyDetailClient({ companyId }: { companyId: string }
               </div>
 
               <div className="mt-4 divide-y divide-slate-100 border-t pt-2">
-                <DetailRow label="Website">
-                  {company.website ? (
+                <InlineEditRow
+                  label="Website"
+                  type="text"
+                  value={company.website}
+                  display={company.website ? (
                     <a href={company.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-brand-600 hover:underline">
                       <Globe className="h-3.5 w-3.5" /> {company.website}
                     </a>
-                  ) : '—'}
-                </DetailRow>
-                <DetailRow label="Email">
-                  {company.email ? (
+                  ) : undefined}
+                  editable={can('companies.update')}
+                  onSave={(v) => updateField.mutateAsync({ website: v })}
+                />
+                <InlineEditRow
+                  label="Email"
+                  type="text"
+                  value={company.email}
+                  display={company.email ? (
                     <a href={`mailto:${company.email}`} className="inline-flex items-center gap-1 text-brand-600 hover:underline">
                       <Mail className="h-3.5 w-3.5" /> {company.email}
                     </a>
-                  ) : '—'}
-                </DetailRow>
-                <DetailRow label="Phone">
-                  {company.phone ? (
+                  ) : undefined}
+                  editable={can('companies.update')}
+                  onSave={(v) => updateField.mutateAsync({ email: v })}
+                />
+                <InlineEditRow
+                  label="Phone"
+                  type="text"
+                  value={company.phone}
+                  display={company.phone ? (
                     <a href={`tel:${company.phone}`} className="inline-flex items-center gap-1 text-brand-600 hover:underline">
                       <Phone className="h-3.5 w-3.5" /> {company.phone}
                     </a>
-                  ) : '—'}
-                </DetailRow>
-                <DetailRow label="Employees">{company.employees ?? '—'}</DetailRow>
-                <DetailRow label="Annual revenue">
-                  {company.annualRevenue != null ? formatCurrency(Number(company.annualRevenue)) : '—'}
-                </DetailRow>
-                <DetailRow label="Owner">
-                  {company.owner ? (
+                  ) : undefined}
+                  editable={can('companies.update')}
+                  onSave={(v) => updateField.mutateAsync({ phone: v })}
+                />
+                <InlineEditRow
+                  label="Employees"
+                  type="number"
+                  value={company.employees}
+                  editable={can('companies.update')}
+                  onSave={(v) => updateField.mutateAsync({ employees: v == null ? null : Number(v) })}
+                />
+                <InlineEditRow
+                  label="Annual revenue"
+                  type="number"
+                  value={company.annualRevenue != null ? Number(company.annualRevenue) : null}
+                  display={company.annualRevenue != null ? formatCurrency(Number(company.annualRevenue)) : undefined}
+                  editable={can('companies.update')}
+                  onSave={(v) => updateField.mutateAsync({ annualRevenue: v == null ? null : Number(v) })}
+                />
+                <InlineEditRow
+                  label="Owner"
+                  type="record"
+                  recordSource="users"
+                  value={company.owner?.id}
+                  display={company.owner ? (
                     <span className="inline-flex items-center gap-2">
                       <span className="avatar-sm text-[10px]">{getInitials(company.owner.firstName, company.owner.lastName)}</span>
                       {company.owner.firstName} {company.owner.lastName}
                     </span>
-                  ) : 'Unassigned'}
-                </DetailRow>
-                <DetailRow label="Location">
-                  {[company.city, company.state, company.country].filter(Boolean).join(', ') || '—'}
-                </DetailRow>
-                <DetailRow label="Address">
-                  {company.address ? (
+                  ) : undefined}
+                  editable={can('companies.update')}
+                  onSave={(v) => updateField.mutateAsync({ ownerId: v || null })}
+                />
+                <InlineEditRow
+                  label="City"
+                  type="text"
+                  value={company.city}
+                  editable={can('companies.update')}
+                  onSave={(v) => updateField.mutateAsync({ city: v })}
+                />
+                <InlineEditRow
+                  label="State"
+                  type="text"
+                  value={company.state}
+                  editable={can('companies.update')}
+                  onSave={(v) => updateField.mutateAsync({ state: v })}
+                />
+                <InlineEditRow
+                  label="Country"
+                  type="text"
+                  value={company.country}
+                  editable={can('companies.update')}
+                  onSave={(v) => updateField.mutateAsync({ country: v })}
+                />
+                <InlineEditRow
+                  label="Address"
+                  type="text"
+                  value={company.address}
+                  display={company.address ? (
                     <span className="inline-flex items-start gap-1"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />{company.address}</span>
-                  ) : '—'}
-                </DetailRow>
+                  ) : undefined}
+                  editable={can('companies.update')}
+                  onSave={(v) => updateField.mutateAsync({ address: v })}
+                />
                 <DetailRow label="Created">{formatDate(company.createdAt)}</DetailRow>
               </div>
             </div>

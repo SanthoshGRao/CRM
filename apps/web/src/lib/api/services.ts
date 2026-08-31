@@ -1,5 +1,5 @@
 import api from './client';
-import type { Deal, Lead, PaginatedResponse } from '@crm/types';
+import type { Deal, Lead, PaginatedResponse, SavedView, SavedViewEntityType } from '@crm/types';
 
 /** Anything omitted is carried over from the lead by the API. */
 export interface ConvertLeadPayload {
@@ -49,7 +49,7 @@ export const leadsApi = {
     return data.data as Lead;
   },
 
-  update: async (id: string, dto: Partial<Lead>) => {
+  update: async (id: string, dto: Record<string, unknown>) => {
     const { data } = await api.patch(`/leads/${id}`, dto);
     return data.data as Lead;
   },
@@ -69,6 +69,10 @@ export const leadsApi = {
     const { data } = await api.patch('/leads/bulk/update', { ids, data: updates });
     return data;
   },
+  bulkDelete: async (ids: string[]) => {
+    const { data } = await api.delete('/leads/bulk/delete', { data: { ids } });
+    return data;
+  },
 };
 
 export const contactsApi = {
@@ -83,6 +87,14 @@ export const contactsApi = {
   create: async (dto: any) => { const { data } = await api.post('/contacts', dto); return data.data; },
   update: async (id: string, dto: any) => { const { data } = await api.patch(`/contacts/${id}`, dto); return data.data; },
   delete: async (id: string) => { const { data } = await api.delete(`/contacts/${id}`); return data; },
+  bulkUpdate: async (ids: string[], updates: Record<string, any>) => {
+    const { data } = await api.patch('/contacts/bulk/update', { ids, data: updates });
+    return data;
+  },
+  bulkDelete: async (ids: string[]) => {
+    const { data } = await api.delete('/contacts/bulk/delete', { data: { ids } });
+    return data;
+  },
 };
 
 export const companiesApi = {
@@ -97,6 +109,14 @@ export const companiesApi = {
   create: async (dto: any) => { const { data } = await api.post('/companies', dto); return data.data; },
   update: async (id: string, dto: any) => { const { data } = await api.patch(`/companies/${id}`, dto); return data.data; },
   remove: async (id: string) => { const { data } = await api.delete(`/companies/${id}`); return data; },
+  bulkUpdate: async (ids: string[], updates: Record<string, any>) => {
+    const { data } = await api.patch('/companies/bulk/update', { ids, data: updates });
+    return data;
+  },
+  bulkDelete: async (ids: string[]) => {
+    const { data } = await api.delete('/companies/bulk/delete', { data: { ids } });
+    return data;
+  },
 };
 
 export const dealsApi = {
@@ -111,6 +131,14 @@ export const dealsApi = {
   create: async (dto: any) => { const { data } = await api.post('/deals', dto); return data.data; },
   update: async (id: string, dto: any) => { const { data } = await api.patch(`/deals/${id}`, dto); return data.data; },
   remove: async (id: string) => { const { data } = await api.delete(`/deals/${id}`); return data; },
+  bulkUpdate: async (ids: string[], updates: Record<string, any>) => {
+    const { data } = await api.patch('/deals/bulk/update', { ids, data: updates });
+    return data;
+  },
+  bulkDelete: async (ids: string[]) => {
+    const { data } = await api.delete('/deals/bulk/delete', { data: { ids } });
+    return data;
+  },
 };
 
 export const tasksApi = {
@@ -122,6 +150,14 @@ export const tasksApi = {
   create: async (dto: any) => { const { data } = await api.post('/tasks', dto); return data.data; },
   update: async (id: string, dto: any) => { const { data } = await api.patch(`/tasks/${id}`, dto); return data.data; },
   delete: async (id: string) => { const { data } = await api.delete(`/tasks/${id}`); return data; },
+  bulkUpdate: async (ids: string[], updates: Record<string, any>) => {
+    const { data } = await api.patch('/tasks/bulk/update', { ids, data: updates });
+    return data;
+  },
+  bulkDelete: async (ids: string[]) => {
+    const { data } = await api.delete('/tasks/bulk/delete', { data: { ids } });
+    return data;
+  },
 };
 
 export const pipelinesApi = {
@@ -229,6 +265,35 @@ export const customFieldsApi = {
   setValues: async (entityType: string, recordId: string, values: Record<string, string | null>) => {
     const { data } = await api.put(`/custom-fields/values/${entityType}/${recordId}`, { values });
     return data.data;
+  },
+};
+
+export interface SavedViewPayload {
+  entityType: SavedViewEntityType;
+  name: string;
+  filters?: unknown[];
+  columns?: string[];
+  sortBy?: string;
+  sortOrder?: string;
+  isPublic?: boolean;
+}
+
+export const savedViewsApi = {
+  list: async (entityType: SavedViewEntityType): Promise<SavedView[]> => {
+    const { data } = await api.get(`/saved-views?${toQuery({ entityType })}`);
+    return data.data;
+  },
+  create: async (dto: SavedViewPayload): Promise<SavedView> => {
+    const { data } = await api.post('/saved-views', dto);
+    return data.data;
+  },
+  update: async (id: string, dto: Partial<SavedViewPayload>): Promise<SavedView> => {
+    const { data } = await api.patch(`/saved-views/${id}`, dto);
+    return data.data;
+  },
+  remove: async (id: string) => {
+    const { data } = await api.delete(`/saved-views/${id}`);
+    return data;
   },
 };
 

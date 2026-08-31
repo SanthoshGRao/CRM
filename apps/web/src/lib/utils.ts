@@ -1,8 +1,21 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import type { MouseEvent } from 'react';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+/**
+ * Click handler for "the whole row opens the detail page" list rows. Ignores
+ * clicks that land on a nested link/button/input/etc so those keep their own
+ * behavior (e.g. cmd-click a name to open it in a new tab, or an action menu).
+ */
+export function rowNavigate(navigate: () => void) {
+  return (e: MouseEvent) => {
+    if ((e.target as HTMLElement).closest('a, button, input, select, textarea, label')) return;
+    navigate();
+  };
 }
 
 /**

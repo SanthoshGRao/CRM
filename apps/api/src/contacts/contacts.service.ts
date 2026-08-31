@@ -1,8 +1,22 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { WorkflowEngineService } from '../workflows/workflow-engine.service';
+import { applyFilters, FilterFieldMap } from '../common/filters/apply-filters.util';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
+
+/** Fields the advanced filter builder (and saved views) may query on. */
+export const CONTACT_FILTER_FIELDS: FilterFieldMap = {
+  firstName: 'string',
+  lastName: 'string',
+  email: 'string',
+  phone: 'string',
+  mobile: 'string',
+  status: 'select',
+  companyId: 'select',
+  ownerId: 'select',
+  createdAt: 'date',
+};
 
 const CONTACT_INCLUDE = {
   company: { select: { id: true, name: true } },
@@ -25,6 +39,8 @@ export class ContactsService {
       companyId?: string;
       ownerId?: string;
       status?: string;
+      isCustomer?: string | boolean;
+      filters?: string;
       sortBy?: string;
       sortOrder?: 'asc' | 'desc';
     },
@@ -35,6 +51,7 @@ export class ContactsService {
       companyId,
       ownerId,
       status,
+      isCustomer,
       sortBy = 'createdAt',
       sortOrder = 'desc',
     } = query;
@@ -54,11 +71,23 @@ export class ContactsService {
     if (companyId) where.companyId = companyId;
     if (ownerId) where.ownerId = ownerId;
     if (status) where.status = status;
+    // Advanced conditions (from the filter builder or a saved view) layer on
+    // top of, and can override, the quick filters above.
+    applyFilters(where, query.filters, CONTACT_FILTER_FIELDS);
+    // A contact is a real customer once it has at least one deal it accepted (status: won).
+    if (isCustomer === 'true' || isCustomer === true) {
+      where.deals = { some: { status: 'won' } };
+    }
+
+    const include =
+      isCustomer === 'true' || isCustomer === true
+        ? { ...CONTACT_INCLUDE, deals: { where: { status: 'won' as const }, select: { id: true, name: true, value: true } } }
+        : CONTACT_INCLUDE;
 
     const [data, total] = await Promise.all([
       this.prisma.contact.findMany({
         where,
-        include: CONTACT_INCLUDE,
+        include,
         orderBy: { [sortBy]: sortOrder },
         skip: (page - 1) * limit,
         take: limit,

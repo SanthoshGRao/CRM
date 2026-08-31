@@ -1,14 +1,16 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Building2, Users, KeyRound, Plus, ShieldCheck } from 'lucide-react';
 import { clsx } from 'clsx';
 import { adminTenantsApi } from '@/lib/api/admin-client';
-import { formatDate } from '@/lib/utils';
+import { formatDate, rowNavigate } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/PageHeader';
 
 export default function AdminOverviewPage() {
+  const router = useRouter();
   const { data: stats, isLoading } = useQuery({
     queryKey: ['admin', 'stats'],
     queryFn: () => adminTenantsApi.stats(),
@@ -83,7 +85,7 @@ export default function AdminOverviewPage() {
               </thead>
               <tbody>
                 {tenants.map((t) => (
-                  <tr key={t.id} className="table-row">
+                  <tr key={t.id} className="table-row" onClick={rowNavigate(() => router.push(`/admin/customers/${t.id}`))}>
                     <td>
                       <Link href={`/admin/customers/${t.id}`} className="font-medium text-slate-900 hover:text-brand-600">
                         {t.name}

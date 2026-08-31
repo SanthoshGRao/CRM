@@ -26,6 +26,7 @@ import { BillingModule } from './billing/billing.module';
 import { DataModule } from './data/data.module';
 import { ImportModule } from './import/import.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { SavedViewsModule } from './saved-views/saved-views.module';
 import { AuditModule } from './audit/audit.module';
 import { HealthModule } from './health/health.module';
 import { PushModule } from './push/push.module';
@@ -87,6 +88,7 @@ import { PushModule } from './push/push.module';
     DataModule,
     ImportModule,
     DashboardModule,
+    SavedViewsModule,
     PushModule,
   ],
   providers: [

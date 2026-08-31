@@ -2,8 +2,19 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { WorkflowEngineService } from '../workflows/workflow-engine.service';
 import { PushService } from '../push/push.service';
+import { applyFilters, FilterFieldMap } from '../common/filters/apply-filters.util';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+
+/** Fields the advanced filter builder (and saved views) may query on. */
+export const TASK_FILTER_FIELDS: FilterFieldMap = {
+  title: 'string',
+  status: 'select',
+  priority: 'select',
+  assignedToId: 'select',
+  dueDate: 'date',
+  createdAt: 'date',
+};
 
 const TASK_INCLUDE = {
   assignedTo: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
@@ -29,6 +40,7 @@ export class TasksService {
       assignedToId?: string;
       status?: string;
       priority?: string;
+      filters?: string;
       sortBy?: string;
       sortOrder?: 'asc' | 'desc';
     },
@@ -52,6 +64,9 @@ export class TasksService {
     if (assignedToId) where.assignedToId = assignedToId;
     if (status) where.status = status;
     if (priority) where.priority = priority;
+    // Advanced conditions (from the filter builder or a saved view) layer on
+    // top of, and can override, the quick filters above.
+    applyFilters(where, query.filters, TASK_FILTER_FIELDS);
 
     const [data, total] = await Promise.all([
       this.prisma.task.findMany({
